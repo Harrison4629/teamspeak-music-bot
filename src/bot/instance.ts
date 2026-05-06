@@ -254,6 +254,8 @@ export class BotInstance extends EventEmitter {
     const AUDIO_COMMANDS = new Set([
       "play",
       "add",
+      "playnext",
+      "pn",
       "next",
       "skip",
       "prev",
@@ -270,6 +272,9 @@ export class BotInstance extends EventEmitter {
         return this.cmdPlay(cmd);
       case "add":
         return this.cmdAdd(cmd);
+      case "playnext":
+      case "pn":
+        return this.cmdPlayNext(cmd);
       case "pause":
         return this.cmdPause();
       case "resume":
@@ -426,6 +431,31 @@ export class BotInstance extends EventEmitter {
 
     this.emit("stateChange");
     return `Added to queue: ${song.name} - ${song.artist} (position ${this.queue.size()})`;
+  }
+
+  private async cmdPlayNext(cmd: ParsedCommand): Promise<string> {
+    if (!cmd.args) return "Usage: !playnext <song name>";
+    const provider = this.getProvider(cmd.flags);
+    const result = await provider.search(cmd.args, 1);
+    if (result.songs.length === 0)
+      return `No results found for: ${cmd.args}`;
+
+    const song = result.songs[0];
+    const wasIdle = this.player.getState() === "idle";
+    this.queue.addNext({ ...song, platform: provider.platform });
+
+    if (wasIdle) {
+      // Nothing playing — addNext fell through to push, promote and start.
+      this.queue.playAt(this.queue.size() - 1);
+      this.player.resetFailures();
+      const ok = await this.resolveAndPlay(this.queue.current()!);
+      this.emit("stateChange");
+      if (!ok) return `Cannot play: ${song.name}`;
+      return `Now playing: ${song.name} - ${song.artist}`;
+    }
+
+    this.emit("stateChange");
+    return `Up next: ${song.name} - ${song.artist}`;
   }
 
   private cmdPause(): string {
@@ -715,6 +745,7 @@ export class BotInstance extends EventEmitter {
       `${p}play -b <song> — Search from BiliBili`,
       `${p}play -y <song> — Search from YouTube (yt-dlp)`,
       `${p}add <song>   — Add to queue`,
+      `${p}playnext <song> — Insert as next song (alias: ${p}pn)`,
       `${p}pause/resume — Pause/resume`,
       `${p}next/prev    — Next/previous`,
       `${p}stop         — Stop and clear queue`,

@@ -340,6 +340,40 @@ export function createPlayerRouter(
     }
   });
 
+  // Insert a single song to play right after the current one.
+  // If nothing is playing, behaves like /play-song (start immediately).
+  router.post("/:botId/play-next-song", async (req, res) => {
+    try {
+      const bot = (req as any).bot;
+      const { song } = req.body;
+      if (!song || !song.id || !song.platform) {
+        res.status(400).json({ error: "song object with id and platform is required" });
+        return;
+      }
+      const queue = bot.getQueueManager();
+      const wasIdle = bot.getPlayer().getState() === "idle";
+      queue.addNext(song);
+
+      if (wasIdle) {
+        // No current playback — promote the just-added song to current
+        // and start it. addNext fell through to push, so it's the last item.
+        queue.playAt(queue.size() - 1);
+        bot.getPlayer().resetFailures();
+        const ok = await bot.resolveAndPlay(queue.current()!);
+        if (!ok) {
+          res.json({ ok: false, message: `无法播放「${song.name || song.id}」（区域/版权限制）` });
+          return;
+        }
+        res.json({ ok: true, message: `正在播放：${song.name || 'Unknown'} - ${song.artist || 'Unknown'}` });
+        return;
+      }
+
+      res.json({ ok: true, message: `已加入下一首：${song.name || 'Unknown'} - ${song.artist || 'Unknown'}` });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   router.post("/:botId/add-song", async (req, res) => {
     try {
       const bot = (req as any).bot;
