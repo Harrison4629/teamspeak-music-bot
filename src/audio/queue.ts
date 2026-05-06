@@ -21,6 +21,16 @@ export class PlayQueue {
   private currentIndex = -1;
   private mode: PlayMode = PlayMode.Sequential;
   private playedIndices = new Set<number>();
+  private history: number[] = [];
+  private static readonly HISTORY_LIMIT = 50;
+
+  private pushHistory(idx: number): void {
+    if (idx < 0 || idx >= this.songs.length) return;
+    this.history.push(idx);
+    if (this.history.length > PlayQueue.HISTORY_LIMIT) {
+      this.history.shift();
+    }
+  }
 
   add(song: QueuedSong): void {
     this.songs.push(song);
