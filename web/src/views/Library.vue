@@ -67,16 +67,14 @@
 import { ref, onMounted } from 'vue';
 import { Icon } from '@iconify/vue';
 import axios from 'axios';
-import { usePlayerStore } from '../stores/player.js';
+import { usePlayerStore, type Song } from '../stores/player.js';
 import CoverArt from '../components/CoverArt.vue';
 import SongCard from '../components/SongCard.vue';
 
 const store = usePlayerStore();
 
-type SongItem = { id: string; name: string; artist: string; album: string; duration: number; coverUrl: string; platform: string };
-
-const history = ref<SongItem[]>([]);
-const liked = ref<SongItem[]>([]);
+const history = ref<Song[]>([]);
+const liked = ref<Song[]>([]);
 const historyLoading = ref(true);
 
 onMounted(async () => {
