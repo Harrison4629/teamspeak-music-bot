@@ -3,6 +3,7 @@ import type {
   MusicProvider,
   Song,
   Playlist,
+  PlaylistDetail,
   LyricLine,
   SearchResult,
   QrCodeResult,
@@ -176,6 +177,21 @@ export class QQMusicProvider implements MusicProvider {
         : "",
       platform: "qq",
     }));
+  }
+
+  async getPlaylistDetail(playlistId: string): Promise<PlaylistDetail | null> {
+    const res = await this.api.get("/getSongListDetail", {
+      params: { disstid: playlistId, ...this.cookieParams },
+    });
+    const cd = res.data?.response?.cdlist?.[0];
+    if (!cd) return null;
+    return {
+      id: String(cd.disstid ?? cd.dissid ?? ""),
+      name: cd.dissname ?? "",
+      description: cd.desc ?? "",
+      coverUrl: cd.logo ?? "",
+      songCount: cd.songnum ?? cd.total_song_num ?? 0,
+    };
   }
 
   async getRecommendPlaylists(): Promise<Playlist[]> {
