@@ -40,6 +40,34 @@ export class PlayQueue {
     this.songs.push(...songs);
   }
 
+  /**
+   * Insert a song to play immediately after the current one. Falls
+   * through to plain push when nothing is playing yet (currentIndex < 0
+   * or queue empty), so the existing "add → idle bot starts playing"
+   * flow continues to work.
+   *
+   * Shifts playedIndices and history entries > currentIndex by +1 so
+   * their references stay valid after the splice.
+   */
+  addNext(song: QueuedSong): void {
+    if (this.currentIndex < 0 || this.songs.length === 0) {
+      this.songs.push(song);
+      return;
+    }
+    const insertAt = this.currentIndex + 1;
+    this.songs.splice(insertAt, 0, song);
+
+    const shifted = new Set<number>();
+    for (const i of this.playedIndices) {
+      shifted.add(i > this.currentIndex ? i + 1 : i);
+    }
+    this.playedIndices = shifted;
+
+    this.history = this.history.map((i) =>
+      i > this.currentIndex ? i + 1 : i,
+    );
+  }
+
   remove(index: number): QueuedSong | null {
     if (index < 0 || index >= this.songs.length) return null;
     const [removed] = this.songs.splice(index, 1);

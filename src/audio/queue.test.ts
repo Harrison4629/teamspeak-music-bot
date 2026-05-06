@@ -386,4 +386,78 @@ describe("PlayQueue", () => {
       expect(count).toBe(50);
     });
   });
+
+  describe("addNext", () => {
+    it("appends when queue is empty (no current)", () => {
+      queue.addNext(makeSong("a"));
+      expect(queue.size()).toBe(1);
+      expect(queue.list()[0].id).toBe("a");
+    });
+
+    it("appends when nothing is currently playing (currentIndex < 0)", () => {
+      queue.add(makeSong("a"));
+      queue.add(makeSong("b"));
+      // No play() yet → currentIndex still -1
+      queue.addNext(makeSong("c"));
+      expect(queue.list().map((s) => s.id)).toEqual(["a", "b", "c"]);
+    });
+
+    it("inserts at currentIndex+1 mid-queue", () => {
+      queue.add(makeSong("a"));
+      queue.add(makeSong("b"));
+      queue.add(makeSong("c"));
+      queue.add(makeSong("d"));
+      queue.play();      // current = 0 (a)
+      queue.next();      // current = 1 (b)
+      queue.addNext(makeSong("x"));
+      expect(queue.list().map((s) => s.id)).toEqual(["a", "b", "x", "c", "d"]);
+      expect(queue.current()?.id).toBe("b"); // current unchanged
+    });
+
+    it("makes the inserted song play next when next() is called", () => {
+      queue.setMode(PlayMode.Sequential);
+      queue.add(makeSong("a"));
+      queue.add(makeSong("b"));
+      queue.play();      // current = 0 (a)
+      queue.addNext(makeSong("x"));
+      expect(queue.next()?.id).toBe("x");
+    });
+
+    it("shifts playedIndices entries > currentIndex by +1", () => {
+      queue.setMode(PlayMode.Random);
+      queue.add(makeSong("a"));
+      queue.add(makeSong("b"));
+      queue.add(makeSong("c"));
+      queue.add(makeSong("d"));
+      queue.playAt(2); // current = 2 (c), played = {2}
+      queue.playAt(3); // current = 3 (d), played = {2, 3}
+      queue.playAt(2); // current = 2 (c), played = {2, 3}
+      // Now insert after c — d's index 3 should become 4
+      queue.addNext(makeSong("x"));
+      expect(queue.list().map((s) => s.id)).toEqual(["a", "b", "c", "x", "d"]);
+      // After addNext: currentIndex still 2; played should be {2, 4}
+      // (the previously-played 'd' is now at index 4)
+      // Verify by removing 'x' (index 3) — d should remain played at index 3
+      queue.remove(3);
+      expect(queue.list().map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
+    });
+
+    it("shifts history entries > currentIndex by +1", () => {
+      queue.setMode(PlayMode.Random);
+      queue.add(makeSong("a"));
+      queue.add(makeSong("b"));
+      queue.add(makeSong("c"));
+      queue.add(makeSong("d"));
+      queue.playAt(0); // current = 0
+      queue.playAt(3); // current = 3 (d), history = [0]
+      queue.playAt(1); // current = 1 (b), history = [0, 3]
+      queue.addNext(makeSong("x"));
+      // Insert at index 2 → entries > 1 shift +1 → history becomes [0, 4]
+      // queue: [a, b, x, c, d]; d is now at index 4
+      // prev → pop 4 → song at index 4 = d
+      expect(queue.prev()?.id).toBe("d");
+      // prev again → pop 0 → song at index 0 = a
+      expect(queue.prev()?.id).toBe("a");
+    });
+  });
 });
