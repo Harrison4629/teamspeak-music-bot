@@ -36,6 +36,7 @@
           :index="i + 1"
           :active="store.currentSong?.id === song.id"
           @play="store.play(song.name, song.platform)"
+          @playNext="store.playNextSong(song)"
           @add="store.addToQueue(song.name, song.platform)"
         />
       </div>
