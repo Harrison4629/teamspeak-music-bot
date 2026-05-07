@@ -74,6 +74,7 @@ async function main() {
     qqProvider,
     bilibiliProvider,
     database: db,
+    avatarStore,
     config,
     configPath: CONFIG_PATH,
     logger,
