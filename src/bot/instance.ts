@@ -778,6 +778,7 @@ export class BotInstance extends EventEmitter {
       `${p}stop         — Stop and clear queue`,
       `${p}vol <0-100>  — Set volume`,
       `${p}queue        — Show queue`,
+      `${p}remove <pos> — Remove song at position (see ${p}queue)`,
       `${p}mode <seq|loop|random|rloop> — Play mode`,
       `${p}playlist <name or id> — Load playlist by name or ID`,
       `${p}playlist -q <name or id> — Load playlist from QQ Music`,

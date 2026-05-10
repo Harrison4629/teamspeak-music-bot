@@ -253,6 +253,7 @@ sudo systemctl start tsmusicbot
 | `!stop` | 停止播放并清空队列 |
 | `!vol <0-100>` | 设置音量 |
 | `!queue` | 查看播放队列 |
+| `!remove <位置>` | 从队列中删除指定位置的歌曲（位置从 1 开始，见 `!queue`） |
 | `!mode <seq\|loop\|random\|rloop>` | 切换播放模式 |
 | `!playlist <歌单名或ID>` | 加载歌单（支持名称模糊搜索和 ID） |
 | `!playlist -q <歌单名>` | 从 QQ 音乐搜索并加载歌单 |
