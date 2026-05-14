@@ -21,8 +21,31 @@
     <div v-if="loading" class="loading">搜索中...</div>
 
     <template v-else-if="songs.length || albums.length || playlists.length">
-      <section v-if="albums.length" class="result-section">
-        <h2 class="section-title">专辑</h2>
+      <div class="tab-bar">
+        <button
+          class="tab"
+          :class="{ active: activeTab === 'songs' }"
+          @click="activeTab = 'songs'"
+        >
+          单曲<span class="tab-count">{{ songs.length }}</span>
+        </button>
+        <button
+          class="tab"
+          :class="{ active: activeTab === 'albums' }"
+          @click="activeTab = 'albums'"
+        >
+          专辑<span class="tab-count">{{ albums.length }}</span>
+        </button>
+        <button
+          class="tab"
+          :class="{ active: activeTab === 'playlists' }"
+          @click="activeTab = 'playlists'"
+        >
+          歌单<span class="tab-count">{{ playlists.length }}</span>
+        </button>
+      </div>
+
+      <section v-if="activeTab === 'albums' && albums.length" class="result-section">
         <div class="card-grid">
           <router-link
             v-for="al in albums"
@@ -40,8 +63,7 @@
         </div>
       </section>
 
-      <section v-if="playlists.length" class="result-section">
-        <h2 class="section-title">歌单</h2>
+      <section v-if="activeTab === 'playlists' && playlists.length" class="result-section">
         <div class="card-grid">
           <router-link
             v-for="pl in playlists"
@@ -58,8 +80,7 @@
         </div>
       </section>
 
-      <section v-if="songs.length" class="result-section">
-        <h2 class="section-title">单曲</h2>
+      <section v-if="activeTab === 'songs' && songs.length" class="result-section">
         <SongCard
           v-for="(song, i) in songs"
           :key="`${song.platform}-${song.id}`"
@@ -91,6 +112,7 @@ const store = usePlayerStore();
 const route = useRoute();
 
 const query = ref((route.query.q as string) || '');
+const activeTab = ref<'songs' | 'albums' | 'playlists'>('songs');
 
 interface Album { id: string; name: string; artist: string; coverUrl: string; songCount?: number; platform: string; }
 interface Playlist { id: string; name: string; coverUrl: string; songCount?: number; platform: string; }
@@ -105,6 +127,7 @@ async function doSearch() {
   if (!query.value.trim()) return;
   loading.value = true;
   searched.value = true;
+  activeTab.value = 'songs';
   try {
     const res = await axios.get('/api/music/search/all', { params: { q: query.value } });
     songs.value = res.data.songs ?? [];
@@ -200,9 +223,49 @@ onMounted(() => {
   gap: 2px;
 }
 
+.tab-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding: 4px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  width: fit-content;
+}
+
+.tab {
+  padding: 8px 20px;
+  border-radius: calc(var(--radius-md) - 2px);
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: var(--fw-semi);
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+
+  &:hover { color: var(--text-primary); }
+
+  &.active {
+    background: var(--color-primary);
+    color: #fff;
+    .tab-count { opacity: 0.85; }
+  }
+}
+
+.tab-count {
+  margin-left: 5px;
+  opacity: 0.55;
+  font-weight: var(--fw-regular);
+  font-size: 13px;
+
+  &::before { content: '('; }
+  &::after  { content: ')'; }
+}
+
 .result-section {
   margin-bottom: 32px;
-  .section-title { font-size: 18px; margin: 0 0 12px; opacity: 0.85; }
 }
 .card-grid {
   display: grid;
