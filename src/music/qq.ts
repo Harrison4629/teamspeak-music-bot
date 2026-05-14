@@ -12,9 +12,19 @@ import type {
 } from "./provider.js";
 import { parseLyrics } from "./netease.js";
 
-// Direct QQ Music API client — bypasses the local API server for search
-// because @sansenjian/qq-music-api still uses the broken c.y.qq.com endpoint.
-const qqDirectApi = axios.create({
+// Primary search client: c.y.qq.com/soso/fcgi-bin/client_search_cp (classic
+// endpoint, currently working without a cookie).
+const qqSearchApi = axios.create({
+  baseURL: "https://c.y.qq.com",
+  timeout: 10000,
+  headers: { referer: "https://y.qq.com" },
+});
+
+// Fallback search client: u.y.qq.com/cgi-bin/musicu.fcg used JSON sub-requests
+// but started returning is_filter=-9 (empty results) for unauthenticated
+// requests ca. 2026-05. Kept as a redundancy in case the primary endpoint
+// goes down or changes its response format.
+const qqFallbackApi = axios.create({
   baseURL: "https://u.y.qq.com",
   timeout: 10000,
   headers: { referer: "https://y.qq.com" },
@@ -82,6 +92,82 @@ export class QQMusicProvider implements MusicProvider {
   }
 
   async search(query: string, limit = 20): Promise<SearchResult> {
+    // Primary: c.y.qq.com client_search_cp (currently working).
+    const primary = await this.searchViaClientSearchCp(query, limit);
+    if (primary) return primary;
+
+    // Fallback: u.y.qq.com musicu.fcg JSON sub-requests (may return empty
+    // when Tencent applies is_filter, but acts as a safety net in case the
+    // primary endpoint format changes or goes down).
+    return this.searchViaMusicuFcg(query, limit);
+  }
+
+  /** Primary search via c.y.qq.com/soso/fcgi-bin/client_search_cp */
+  private async searchViaClientSearchCp(
+    query: string,
+    limit: number
+  ): Promise<SearchResult | null> {
+    try {
+      const songParams = {
+        w: query,
+        format: "json",
+        p: 1,
+        n: Math.min(limit, 50),
+        type: 0,
+        cr: 1,
+      };
+      const albumParams = {
+        w: query,
+        format: "json",
+        p: 1,
+        n: 5,
+        t: 8,
+        cr: 1,
+      };
+
+      const [songRes, albumRes] = await Promise.allSettled([
+        qqSearchApi.get("/soso/fcgi-bin/client_search_cp", { params: songParams }),
+        qqSearchApi.get("/soso/fcgi-bin/client_search_cp", { params: albumParams }),
+      ]);
+
+      const songList: any[] =
+        songRes.status === "fulfilled"
+          ? (songRes.value.data?.data?.song?.list ?? [])
+          : [];
+
+      // Treat zero songs as "endpoint returned no useful data" so we fall
+      // through to the fallback path.
+      if (songList.length === 0) return null;
+
+      const songs: Song[] = songList.map((s: any) => ({
+        id: String(s.songmid ?? s.songid ?? ""),
+        name: s.songname ?? s.name ?? "",
+        artist: (s.singer ?? []).map((a: any) => a.name).join(" / "),
+        album: s.albumname ?? s.album?.name ?? "",
+        duration: s.interval ?? 0,
+        coverUrl: s.albummid
+          ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${s.albummid}.jpg`
+          : "",
+        platform: "qq",
+      }));
+
+      const albumList: any[] =
+        albumRes.status === "fulfilled"
+          ? (albumRes.value.data?.data?.album?.list ?? [])
+          : [];
+      const albums = mapQqAlbums(albumList);
+
+      return { songs, playlists: [], albums };
+    } catch {
+      return null; // network error or unexpected response → fall back
+    }
+  }
+
+  /** Fallback search via u.y.qq.com/cgi-bin/musicu.fcg */
+  private async searchViaMusicuFcg(
+    query: string,
+    limit: number
+  ): Promise<SearchResult> {
     const reqData = JSON.stringify({
       req_0: {
         module: "music.search.SearchCgiService",
@@ -94,7 +180,7 @@ export class QQMusicProvider implements MusicProvider {
         param: { searchid: "1", query, num_per_page: 5, search_type: 8 },
       },
     });
-    const res = await qqDirectApi.get("/cgi-bin/musicu.fcg", {
+    const res = await qqFallbackApi.get("/cgi-bin/musicu.fcg", {
       params: { format: "json", data: reqData },
     });
     const list: any[] =
