@@ -380,7 +380,7 @@ export class BotInstance extends EventEmitter {
         return false;
       }
       song.url = url;
-      this.player.play(url);
+      this.player.play(url, 0, song.duration);
       this.database.addPlayHistory({
         botId: this.id,
         songId: song.id,

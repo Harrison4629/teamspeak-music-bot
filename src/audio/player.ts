@@ -136,6 +136,9 @@ export class AudioPlayer extends EventEmitter {
   private static readonly HEALTHY_FRAME_RESET = 50; // ~1 second of audio
   private downloader: ChildProcess | null = null;
   private currentTempDir: string | null = null;
+  private emptyFrameAttempts = 0;
+  private static readonly MAX_EMPTY_ATTEMPTS = 250; // ~5秒的20ms帧循环（增加容错）
+  private currentSongDuration = 0; // 当前歌曲总时长（秒）
 
   constructor(logger: Logger) {
     super();
@@ -143,7 +146,7 @@ export class AudioPlayer extends EventEmitter {
     this.logger = logger;
   }
 
-  play(url: string, seekSeconds = 0): void {
+  play(url: string, seekSeconds = 0, songDuration = 0): void {
     // 1. 停止当前所有播放，自增 sessionId 屏蔽旧回调 （
     this.stop();
 
@@ -154,6 +157,8 @@ export class AudioPlayer extends EventEmitter {
     this.healthyFrames = 0;
     this.ffmpegPaused = false;
     this.spawnFailed = false;
+    this.emptyFrameAttempts = 0;
+    this.currentSongDuration = songDuration;
 
     if (this.consecutiveFailures >= AudioPlayer.MAX_CONSECUTIVE_FAILURES) {
       this.logger.error({ failures: this.consecutiveFailures }, "FFmpeg failures limit reached");
@@ -183,7 +188,7 @@ export class AudioPlayer extends EventEmitter {
       if (this.sessionId !== currentSessionId) {
         return;
       }
-
+      
       this.pcmBuffer = Buffer.concat([this.pcmBuffer, chunk]);
       if (this.pcmBuffer.length > AudioPlayer.BUFFER_HIGH_WATER && !this.ffmpegPaused && this.ffmpeg?.stdout) {
         this.ffmpeg.stdout.pause();
@@ -420,6 +425,49 @@ export class AudioPlayer extends EventEmitter {
       if (this.state === "playing") this.sendNextFrame();
       else if (this.state === "paused") this.nextFrameTime = performance.now();
 
+      // 检测pcmBuffer不足PCM_FRAME_BYTES导致连续循环卡死：
+      // 条件1: FFmpeg仍在运行但缓冲区不足一帧，且连续多次无法获取数据
+      // 条件2: 已播放时间接近歌曲结尾（最后5秒内）或未知时长
+      const elapsed = this.getElapsed();
+      const isNearEnd = this.currentSongDuration > 0 
+        ? (this.currentSongDuration - elapsed) <= 5 // 距离结尾不足5秒
+        : true; // 未知时长时保守处理
+      
+      if (this.ffmpeg !== null && this.pcmBuffer.length < PCM_FRAME_BYTES) {
+        this.emptyFrameAttempts++;
+        
+        // 只有同时满足：达到空帧阈值 + 接近结尾，才判定为播放结束
+        if (this.emptyFrameAttempts >= AudioPlayer.MAX_EMPTY_ATTEMPTS && isNearEnd) {
+          this.logger.info({ 
+            sessionId: this.sessionId,
+            emptyAttempts: this.emptyFrameAttempts,
+            bufferSize: this.pcmBuffer.length,
+            elapsed: Math.round(elapsed),
+            duration: this.currentSongDuration,
+            remaining: Math.round(this.currentSongDuration - elapsed)
+          }, "FFmpeg stopped outputting data near end, ending track");
+          this.frameLoopRunning = false;
+          if (this.state !== "idle") {
+            this.state = "idle";
+            // 清理FFmpeg进程
+            if (this.ffmpeg) {
+              const procToKill = this.ffmpeg;
+              const pidToKill = procToKill.pid;
+              this.ffmpeg = null;
+              if (pidToKill) {
+                this.forceCleanup(procToKill, pidToKill);
+              }
+            }
+            this.consecutiveFailures = 0;
+            this.emit("trackEnd");
+          }
+          return;
+        }
+      } else {
+        // 成功获取数据或FFmpeg已结束，重置计数器
+        this.emptyFrameAttempts = 0;
+      }
+
       if (!this.ffmpeg && this.pcmBuffer.length < PCM_FRAME_BYTES) {
         this.frameLoopRunning = false;
         if (this.state !== "idle") {
@@ -472,7 +520,11 @@ export class AudioPlayer extends EventEmitter {
   }
 
   getElapsed(): number { return this.seekOffset + (this.framesPlayed * FRAME_DURATION_MS) / 1000; }
-  seek(seconds: number): void { if (this.currentUrl && Number.isFinite(seconds) && seconds >= 0) this.play(this.currentUrl, seconds); }
+  seek(seconds: number): void { 
+    if (this.currentUrl && Number.isFinite(seconds) && seconds >= 0) {
+      this.play(this.currentUrl, seconds, this.currentSongDuration);
+    }
+  }
   pause(): void { if (this.state === "playing") this.state = "paused"; }
   resume(): void { if (this.state === "paused") { this.state = "playing"; this.nextFrameTime = performance.now(); } }
   resetFailures(): void { this.consecutiveFailures = 0; }
