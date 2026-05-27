@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Bilibili / NetEase / QQ image CDNs reject requests whose Referer is not on their whitelist.
+       Setting no-referrer at the document level covers <img> tags AND CSS background-image fetches.
+       Our own /api/* CSRF check uses Origin (not Referer), so this doesn't break auth. -->
+  <meta name="referrer" content="no-referrer">
   <title>TSMusicBot</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&display=swap" rel="stylesheet">
