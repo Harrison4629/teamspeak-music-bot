@@ -34,7 +34,8 @@ async function submit() {
   loading.value = true;
   try {
     await session.login(username.value, password.value);
-    const next = typeof route.query.next === 'string' ? route.query.next : '/';
+    const rawNext = typeof route.query.next === 'string' ? route.query.next : '/';
+    const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/';
     router.replace(next);
   } catch (e) {
     error.value = (e as Error).message;

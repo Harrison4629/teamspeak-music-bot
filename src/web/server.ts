@@ -123,6 +123,21 @@ export function createWebServer(options: WebServerOptions): WebServer {
       socket.destroy();
       return;
     }
+    const reqHost = req.headers.host;
+    const originHeader = req.headers.origin;
+    if (originHeader) {
+      let originHost: string | null = null;
+      try {
+        originHost = new URL(originHeader).host;
+      } catch {
+        // fall through; treat as missing/invalid origin
+      }
+      if (!originHost || originHost !== reqHost) {
+        socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+    }
     const result = validateSessionFromHeaders(req.headers.cookie as string | undefined, sessions);
     if (!result) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
