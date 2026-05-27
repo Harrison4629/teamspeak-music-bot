@@ -61,7 +61,7 @@ describe("session router", () => {
   });
 
   it("POST /setup returns 409 once a user already exists", async () => {
-    await users.createUser("admin", "pw");
+    await users.createUser("admin", "pw-admin-pw", "admin");
     const res = await request(app)
       .post("/api/session/setup")
       .send({ username: "alice", password: "pw" });
@@ -70,7 +70,7 @@ describe("session router", () => {
   });
 
   it("POST /login returns 401 with constant-time delay on bad credentials", async () => {
-    await users.createUser("alice", "correct");
+    await users.createUser("alice", "correct-pw-pw", "admin");
     const start = Date.now();
     const res = await request(app)
       .post("/api/session/login")
@@ -81,20 +81,20 @@ describe("session router", () => {
   }, 10_000);
 
   it("POST /login sets a session cookie on success", async () => {
-    await users.createUser("alice", "pw");
+    await users.createUser("alice", "pw-alice", "admin");
     const res = await request(app)
       .post("/api/session/login")
-      .send({ username: "alice", password: "pw" });
+      .send({ username: "alice", password: "pw-alice" });
     expect(res.status).toBe(200);
     expect(res.body.username).toBe("alice");
     extractCookie(res);
   });
 
   it("GET /me returns the current user when cookie is present, 401 otherwise", async () => {
-    await users.createUser("alice", "pw");
+    await users.createUser("alice", "pw-alice", "admin");
     const loginRes = await request(app)
       .post("/api/session/login")
-      .send({ username: "alice", password: "pw" });
+      .send({ username: "alice", password: "pw-alice" });
     const cookie = extractCookie(loginRes);
 
     const me = await request(app).get("/api/session/me").set("Cookie", cookie);
@@ -106,10 +106,10 @@ describe("session router", () => {
   });
 
   it("POST /logout deletes the session and clears the cookie", async () => {
-    await users.createUser("alice", "pw");
+    await users.createUser("alice", "pw-alice", "admin");
     const loginRes = await request(app)
       .post("/api/session/login")
-      .send({ username: "alice", password: "pw" });
+      .send({ username: "alice", password: "pw-alice" });
     const cookie = extractCookie(loginRes);
 
     const logout = await request(app).post("/api/session/logout").set("Cookie", cookie);
@@ -120,24 +120,24 @@ describe("session router", () => {
   });
 
   it("POST /change-password requires old password and invalidates other sessions", async () => {
-    const u = await users.createUser("alice", "old");
+    const u = await users.createUser("alice", "old-pw-pw", "admin");
     const cookieA = extractCookie(
-      await request(app).post("/api/session/login").send({ username: "alice", password: "old" })
+      await request(app).post("/api/session/login").send({ username: "alice", password: "old-pw-pw" })
     );
     const cookieB = extractCookie(
-      await request(app).post("/api/session/login").send({ username: "alice", password: "old" })
+      await request(app).post("/api/session/login").send({ username: "alice", password: "old-pw-pw" })
     );
 
     const wrongOld = await request(app)
       .post("/api/session/change-password")
       .set("Cookie", cookieA)
-      .send({ oldPassword: "WRONG", newPassword: "new" });
+      .send({ oldPassword: "WRONG", newPassword: "newpassword" });
     expect(wrongOld.status).toBe(401);
 
     const ok = await request(app)
       .post("/api/session/change-password")
       .set("Cookie", cookieA)
-      .send({ oldPassword: "old", newPassword: "newpassword" });
+      .send({ oldPassword: "old-pw-pw", newPassword: "newpassword" });
     expect(ok.status).toBe(204);
 
     const meA = await request(app).get("/api/session/me").set("Cookie", cookieA);

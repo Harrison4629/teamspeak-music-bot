@@ -4,24 +4,29 @@ import bcrypt from "bcryptjs";
 
 const BCRYPT_ROUNDS = 12;
 
+export type UserRole = "admin" | "member";
+
 export interface UserRow {
   id: string;
   username: string;
   passwordHash: string;
   createdAt: number;
   updatedAt: number;
+  role: UserRole;
 }
 
 export interface UserStore {
   countUsers(): number;
-  createUser(username: string, password: string): Promise<UserRow>;
+  countAdmins(): number;
+  createUser(username: string, password: string, role: UserRole): Promise<UserRow>;
   createFirstUser(username: string, password: string): Promise<UserRow | null>;
   findByUsername(username: string): UserRow | null;
   findById(id: string): UserRow | null;
   verifyPassword(plain: string, hash: string): Promise<boolean>;
   changePassword(userId: string, newPassword: string): Promise<void>;
-  listUsers(): Array<{ id: string; username: string; createdAt: number }>;
+  setRole(userId: string, role: UserRole): boolean;
   deleteUser(id: string): boolean;
+  listUsers(): Array<{ id: string; username: string; createdAt: number; role: UserRole }>;
 }
 
 export class UsernameTakenError extends Error {
@@ -33,20 +38,24 @@ export class UsernameTakenError extends Error {
 
 export function createUserStore(db: Database.Database): UserStore {
   const countStmt = db.prepare("SELECT COUNT(*) AS n FROM users");
+  const countAdminsStmt = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'");
   const insertStmt = db.prepare(
-    "INSERT INTO users (id, username, passwordHash, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO users (id, username, passwordHash, createdAt, updatedAt, role) VALUES (?, ?, ?, ?, ?, ?)"
   );
   const findByUsernameStmt = db.prepare(
-    "SELECT id, username, passwordHash, createdAt, updatedAt FROM users WHERE username = ? COLLATE NOCASE"
+    "SELECT id, username, passwordHash, createdAt, updatedAt, role FROM users WHERE username = ? COLLATE NOCASE"
   );
   const findByIdStmt = db.prepare(
-    "SELECT id, username, passwordHash, createdAt, updatedAt FROM users WHERE id = ?"
+    "SELECT id, username, passwordHash, createdAt, updatedAt, role FROM users WHERE id = ?"
   );
   const updatePasswordStmt = db.prepare(
     "UPDATE users SET passwordHash = ?, updatedAt = ? WHERE id = ?"
   );
+  const updateRoleStmt = db.prepare(
+    "UPDATE users SET role = ?, updatedAt = ? WHERE id = ?"
+  );
   const listUsersStmt = db.prepare(
-    "SELECT id, username, createdAt FROM users ORDER BY createdAt ASC"
+    "SELECT id, username, createdAt, role FROM users ORDER BY createdAt ASC"
   );
   const deleteUserStmt = db.prepare("DELETE FROM users WHERE id = ?");
 
@@ -55,19 +64,23 @@ export function createUserStore(db: Database.Database): UserStore {
       return (countStmt.get() as { n: number }).n;
     },
 
-    async createUser(username, password) {
+    countAdmins() {
+      return (countAdminsStmt.get() as { n: number }).n;
+    },
+
+    async createUser(username, password, role) {
       const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const id = randomUUID();
       const now = Date.now();
       try {
-        insertStmt.run(id, username, hash, now, now);
+        insertStmt.run(id, username, hash, now, now, role);
       } catch (err) {
         if (err && typeof err === "object" && (err as { code?: string }).code === "SQLITE_CONSTRAINT_UNIQUE") {
           throw new UsernameTakenError(username);
         }
         throw err;
       }
-      return { id, username, passwordHash: hash, createdAt: now, updatedAt: now };
+      return { id, username, passwordHash: hash, createdAt: now, updatedAt: now, role };
     },
 
     async createFirstUser(username, password) {
@@ -78,14 +91,14 @@ export function createUserStore(db: Database.Database): UserStore {
         const count = (countStmt.get() as { n: number }).n;
         if (count !== 0) return null;
         try {
-          insertStmt.run(id, username, hash, now, now);
+          insertStmt.run(id, username, hash, now, now, "admin");
         } catch (err) {
           if (err && typeof err === "object" && (err as { code?: string }).code === "SQLITE_CONSTRAINT_UNIQUE") {
             return null;
           }
           throw err;
         }
-        return { id, username, passwordHash: hash, createdAt: now, updatedAt: now } as UserRow;
+        return { id, username, passwordHash: hash, createdAt: now, updatedAt: now, role: "admin" } as UserRow;
       });
       return run();
     },
@@ -107,8 +120,13 @@ export function createUserStore(db: Database.Database): UserStore {
       updatePasswordStmt.run(hash, Date.now(), userId);
     },
 
+    setRole(userId, role) {
+      const result = updateRoleStmt.run(role, Date.now(), userId);
+      return result.changes > 0;
+    },
+
     listUsers() {
-      return listUsersStmt.all() as Array<{ id: string; username: string; createdAt: number }>;
+      return listUsersStmt.all() as Array<{ id: string; username: string; createdAt: number; role: UserRole }>;
     },
 
     deleteUser(id) {

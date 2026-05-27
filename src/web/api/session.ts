@@ -60,7 +60,7 @@ export function createSessionRouter(
       res.status(401).json({ error: "unauthenticated" });
       return;
     }
-    req.user = { id: result.userId, username: result.username };
+    req.user = { id: result.userId, username: result.username, role: result.role };
     const token = extractSessionToken(req.headers.cookie);
     if (token) setSessionCookie(res, token);
     next();
@@ -98,7 +98,7 @@ export function createSessionRouter(
         logger.warn({ err: auditErr, action: "admin.first_created" }, "audit insert failed");
       }
       logger.info({ userId: user.id, username }, "First admin created");
-      res.json({ id: user.id, username: user.username });
+      res.json({ id: user.id, username: user.username, role: user.role });
     } catch (err) {
       logger.error({ err }, "setup failed");
       res.status(500).json({ error: "internal" });
@@ -120,7 +120,7 @@ export function createSessionRouter(
     }
     const { token } = sessions.createSession(user.id);
     setSessionCookie(res, token);
-    res.json({ id: user.id, username: user.username });
+    res.json({ id: user.id, username: user.username, role: user.role });
   });
 
   router.post("/logout", (req, res) => {

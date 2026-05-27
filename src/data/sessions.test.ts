@@ -18,7 +18,7 @@ describe("SessionStore", () => {
     botDb = createDatabase(":memory:");
     users = createUserStore(botDb.db);
     sessions = createSessionStore(botDb.db);
-    const u = await users.createUser("alice", "pw");
+    const u = await users.createUser("alice", "pw-alice", "admin");
     userId = u.id;
   });
 
@@ -40,6 +40,7 @@ describe("SessionStore", () => {
     expect(result).not.toBeNull();
     expect(result!.userId).toBe(userId);
     expect(result!.username).toBe("alice");
+    expect(result!.role).toBe("admin");
   });
 
   it("validateAndTouch returns null and deletes the row for an expired session", () => {

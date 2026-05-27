@@ -33,7 +33,7 @@ describe("database", () => {
 
     const userCols = botDb.db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
     const userColNames = userCols.map((c) => c.name).sort();
-    expect(userColNames).toEqual(["createdAt", "id", "passwordHash", "updatedAt", "username"]);
+    expect(userColNames).toEqual(["createdAt", "id", "passwordHash", "role", "updatedAt", "username"]);
 
     const sessionCols = botDb.db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
     const sessionColNames = sessionCols.map((c) => c.name).sort();

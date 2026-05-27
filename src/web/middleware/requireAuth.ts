@@ -9,7 +9,7 @@ import {
 
 declare module "express-serve-static-core" {
   interface Request {
-    user?: { id: string; username: string };
+    user?: { id: string; username: string; role: "admin" | "member" };
   }
 }
 
@@ -21,7 +21,7 @@ export function createRequireAuth(sessions: SessionStore): RequestHandler {
       res.status(401).json({ error: "unauthenticated" });
       return;
     }
-    req.user = { id: result.userId, username: result.username };
+    req.user = { id: result.userId, username: result.username, role: result.role };
     const token = extractSessionToken(req.headers.cookie);
     if (token) {
       res.cookie(SESSION_COOKIE_NAME, token, {

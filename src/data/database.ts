@@ -97,6 +97,12 @@ function migrateSchema(db: Database.Database): void {
   if (!names.includes("custom_avatar_path")) {
     db.exec("ALTER TABLE bot_instances ADD COLUMN custom_avatar_path TEXT");
   }
+
+  const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  const userColNames = userColumns.map((c) => c.name);
+  if (!userColNames.includes("role")) {
+    db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'");
+  }
 }
 
 function initTables(db: Database.Database): void {
@@ -133,7 +139,8 @@ function initTables(db: Database.Database): void {
       username TEXT NOT NULL UNIQUE COLLATE NOCASE,
       passwordHash TEXT NOT NULL,
       createdAt INTEGER NOT NULL,
-      updatedAt INTEGER NOT NULL
+      updatedAt INTEGER NOT NULL,
+      role TEXT NOT NULL DEFAULT 'admin'
     );
 
     CREATE TABLE IF NOT EXISTS sessions (

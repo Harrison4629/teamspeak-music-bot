@@ -27,13 +27,14 @@ export function createUsersRouter(
   });
 
   router.post("/", async (req, res) => {
-    const { username, password } = req.body ?? {};
+    const { username, password, role: roleInput } = req.body ?? {};
     if (!isValidUsername(username) || !isValidPassword(password)) {
       res.status(400).json({ error: "invalid username or password" });
       return;
     }
+    const role: "admin" | "member" = roleInput === "admin" ? "admin" : "member";
     try {
-      const u = await users.createUser(username, password);
+      const u = await users.createUser(username, password, role);
       try {
         audit.record({
           actorId: req.user!.id, actorUsername: req.user!.username,
@@ -43,8 +44,8 @@ export function createUsersRouter(
       } catch (auditErr) {
         logger.warn({ err: auditErr, action: "user.created" }, "audit insert failed");
       }
-      logger.info({ createdBy: req.user!.id, newUserId: u.id, username }, "User created");
-      res.status(201).json({ id: u.id, username: u.username });
+      logger.info({ createdBy: req.user!.id, newUserId: u.id, username, role }, "User created");
+      res.status(201).json({ id: u.id, username: u.username, role: u.role });
     } catch (err) {
       if (err instanceof UsernameTakenError) {
         res.status(409).json({ error: "username taken" });
@@ -64,6 +65,10 @@ export function createUsersRouter(
     }
     if (targetId === req.user!.id) {
       res.status(400).json({ error: "cannot delete self" });
+      return;
+    }
+    if (target.role === "admin" && users.countAdmins() <= 1) {
+      res.status(400).json({ error: "cannot delete last admin" });
       return;
     }
     const deleted = users.deleteUser(targetId);
@@ -113,6 +118,44 @@ export function createUsersRouter(
       logger.warn({ err: auditErr, action: "user.password_reset" }, "audit insert failed");
     }
     logger.info({ resetBy: req.user!.id, targetUserId: targetId }, "Password reset");
+    res.status(204).end();
+  });
+
+  router.patch("/:id/role", (req, res) => {
+    const targetId = req.params.id;
+    const { role: newRole } = req.body ?? {};
+    if (newRole !== "admin" && newRole !== "member") {
+      res.status(400).json({ error: "invalid role" });
+      return;
+    }
+    const target = users.findById(targetId);
+    if (!target) {
+      res.status(404).json({ error: "not found" });
+      return;
+    }
+    if (target.role === newRole) {
+      res.status(204).end();
+      return;
+    }
+    if (target.role === "admin" && newRole === "member" && users.countAdmins() <= 1) {
+      res.status(400).json({ error: "cannot demote last admin" });
+      return;
+    }
+    const changed = users.setRole(targetId, newRole);
+    if (!changed) {
+      res.status(404).json({ error: "not found" });
+      return;
+    }
+    try {
+      audit.record({
+        actorId: req.user!.id, actorUsername: req.user!.username,
+        targetUserId: target.id, targetUsername: target.username,
+        action: "user.role_changed",
+      });
+    } catch (auditErr) {
+      logger.warn({ err: auditErr, action: "user.role_changed" }, "audit insert failed");
+    }
+    logger.info({ actorId: req.user!.id, targetId, newRole }, "User role changed");
     res.status(204).end();
   });
 

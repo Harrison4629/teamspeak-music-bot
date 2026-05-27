@@ -22,6 +22,7 @@ import { setupWebSocket } from "./websocket.js";
 import { createUserStore } from "../data/users.js";
 import { createSessionStore } from "../data/sessions.js";
 import { createRequireAuth } from "./middleware/requireAuth.js";
+import { requireAdmin } from "./middleware/requireAdmin.js";
 import { csrfOriginCheck } from "./middleware/csrf.js";
 import { validateSessionFromHeaders } from "./auth/validateSession.js";
 
@@ -104,8 +105,9 @@ export function createWebServer(options: WebServerOptions): WebServer {
     "/api/auth",
     createAuthRouter(options.neteaseProvider, options.qqProvider, options.bilibiliProvider, logger, options.cookieStore)
   );
-  app.use("/api/users", createUsersRouter(users, sessions, audit, logger));
-  app.use("/api/audit", createAuditRouter(audit));
+  // admin-only routes
+  app.use("/api/users", requireAdmin, createUsersRouter(users, sessions, audit, logger));
+  app.use("/api/audit", requireAdmin, createAuditRouter(audit));
 
   // ─── Static SPA (public) ────────────────────────────────────────────────
   if (options.staticDir) {

@@ -7,6 +7,7 @@ export const SESSION_TOUCH_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 export interface SessionValidation {
   userId: string;
   username: string;
+  role: "admin" | "member";
 }
 
 export interface SessionStore {
@@ -26,7 +27,7 @@ export function createSessionStore(db: Database.Database): SessionStore {
     "INSERT INTO sessions (id, userId, createdAt, expiresAt, lastSeenAt) VALUES (?, ?, ?, ?, ?)"
   );
   const selectStmt = db.prepare(`
-    SELECT s.id, s.userId, s.expiresAt, s.lastSeenAt, u.username
+    SELECT s.id, s.userId, s.expiresAt, s.lastSeenAt, u.username, u.role
     FROM sessions s INNER JOIN users u ON u.id = s.userId
     WHERE s.id = ?
   `);
@@ -54,7 +55,7 @@ export function createSessionStore(db: Database.Database): SessionStore {
       if (!rawToken) return null;
       const id = hashToken(rawToken);
       const row = selectStmt.get(id) as
-        | { id: string; userId: string; expiresAt: number; lastSeenAt: number; username: string }
+        | { id: string; userId: string; expiresAt: number; lastSeenAt: number; username: string; role: string }
         | undefined;
       if (!row) return null;
       const now = Date.now();
@@ -65,7 +66,7 @@ export function createSessionStore(db: Database.Database): SessionStore {
       if (now - row.lastSeenAt > SESSION_TOUCH_INTERVAL_MS) {
         touchStmt.run(now, now + SESSION_TTL_MS, id);
       }
-      return { userId: row.userId, username: row.username };
+      return { userId: row.userId, username: row.username, role: row.role as "admin" | "member" };
     },
 
     deleteSession(rawToken) {

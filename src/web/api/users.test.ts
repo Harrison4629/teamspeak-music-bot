@@ -36,10 +36,10 @@ describe("users router", () => {
     users = createUserStore(botDb.db);
     sessions = createSessionStore(botDb.db);
     app = makeApp(botDb, users, sessions);
-    const alice = await users.createUser("alice", "pw-alice");
+    const alice = await users.createUser("alice", "pw-alice", "admin");
     aliceId = alice.id;
     aliceCookie = `${SESSION_COOKIE_NAME}=${sessions.createSession(alice.id).token}`;
-    const bob = await users.createUser("bob", "pw-bob-bob");
+    const bob = await users.createUser("bob", "pw-bob-bob", "member");
     bobId = bob.id;
   });
 
@@ -188,5 +188,70 @@ describe("users router", () => {
     expect(res.status).toBe(204);
     // Bob's session should be dead
     expect(sessions.validateAndTouch(bobToken)).toBeNull();
+  });
+
+  it("POST / defaults new user to role=member when role omitted", async () => {
+    const res = await request(app)
+      .post("/api/users")
+      .set("Cookie", aliceCookie)
+      .send({ username: "carol", password: "pw-carol-pw" });
+    expect(res.status).toBe(201);
+    expect(res.body.role).toBe("member");
+  });
+
+  it("POST / accepts role=admin", async () => {
+    const res = await request(app)
+      .post("/api/users")
+      .set("Cookie", aliceCookie)
+      .send({ username: "carol", password: "pw-carol-pw", role: "admin" });
+    expect(res.status).toBe(201);
+    expect(res.body.role).toBe("admin");
+    expect(users.countAdmins()).toBe(2);
+  });
+
+  it("PATCH /:id/role can change role between admin and member", async () => {
+    const res = await request(app)
+      .patch(`/api/users/${bobId}/role`)
+      .set("Cookie", aliceCookie)
+      .send({ role: "admin" });
+    expect(res.status).toBe(204);
+    expect(users.findById(bobId)!.role).toBe("admin");
+  });
+
+  it("PATCH /:id/role blocks demoting the last admin", async () => {
+    // alice is the only admin. Demoting her would leave 0 admins. Block.
+    const res = await request(app)
+      .patch(`/api/users/${aliceId}/role`)
+      .set("Cookie", aliceCookie)
+      .send({ role: "member" });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "cannot demote last admin" });
+  });
+
+  it("PATCH /:id/role allows demoting an admin when other admins exist", async () => {
+    // Promote bob first
+    users.setRole(bobId, "admin");
+    // Now both are admins. Demoting alice should work.
+    const res = await request(app)
+      .patch(`/api/users/${aliceId}/role`)
+      .set("Cookie", aliceCookie)
+      .send({ role: "member" });
+    expect(res.status).toBe(204);
+  });
+
+  it("PATCH /:id/role 400 on invalid role", async () => {
+    const res = await request(app)
+      .patch(`/api/users/${bobId}/role`)
+      .set("Cookie", aliceCookie)
+      .send({ role: "superuser" });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH /:id/role 404 on unknown user", async () => {
+    const res = await request(app)
+      .patch(`/api/users/not-a-real-id/role`)
+      .set("Cookie", aliceCookie)
+      .send({ role: "admin" });
+    expect(res.status).toBe(404);
   });
 });

@@ -20,7 +20,7 @@ describe("audit router", () => {
     const users = createUserStore(botDb.db);
     const sessions = createSessionStore(botDb.db);
     const audit = createAuditStore(botDb.db);
-    const alice = await users.createUser("alice", "pw-alice");
+    const alice = await users.createUser("alice", "pw-alice", "admin");
     cookie = `${SESSION_COOKIE_NAME}=${sessions.createSession(alice.id).token}`;
     for (let i = 0; i < 3; i++) {
       audit.record({

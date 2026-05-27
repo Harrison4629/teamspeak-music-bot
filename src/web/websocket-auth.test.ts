@@ -36,7 +36,7 @@ describe("WebSocket auth at upgrade", () => {
     botDb = createDatabase(":memory:");
     const users = createUserStore(botDb.db);
     const sessions = createSessionStore(botDb.db);
-    const u = await users.createUser("alice", "pw");
+    const u = await users.createUser("alice", "pw-alice", "admin");
     validToken = sessions.createSession(u.id).token;
 
     const { server } = buildServer(sessions);
