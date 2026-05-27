@@ -379,6 +379,7 @@ onMounted(() => {
 
 .daily-card {
   cursor: pointer;
+  min-width: 0;
 }
 
 .daily-name {
