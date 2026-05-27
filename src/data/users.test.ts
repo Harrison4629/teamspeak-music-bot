@@ -122,4 +122,65 @@ describe("UserStore", () => {
     expect(alice.role).toBe("admin");
     expect(bob.role).toBe("member");
   });
+
+  it("setRoleIfNotLastAdmin returns 'would_orphan' for the only admin being demoted", async () => {
+    const alice = await users.createUser("alice", "pw-alice", "admin");
+    expect(users.setRoleIfNotLastAdmin(alice.id, "member")).toBe("would_orphan");
+    expect(users.findById(alice.id)!.role).toBe("admin"); // unchanged
+  });
+
+  it("setRoleIfNotLastAdmin allows demotion when another admin exists", async () => {
+    const alice = await users.createUser("alice", "pw-alice", "admin");
+    await users.createUser("bob", "pw-bob-bob", "admin");
+    expect(users.setRoleIfNotLastAdmin(alice.id, "member")).toBe("ok");
+    expect(users.findById(alice.id)!.role).toBe("member");
+  });
+
+  it("setRoleIfNotLastAdmin returns 'not_found' for unknown id", () => {
+    expect(users.setRoleIfNotLastAdmin("not-a-real-id", "member")).toBe("not_found");
+  });
+
+  it("setRoleIfNotLastAdmin: concurrent demotions of two admins keep one admin", async () => {
+    const alice = await users.createUser("alice", "pw-alice", "admin");
+    const bob = await users.createUser("bob", "pw-bob-bob", "admin");
+    // Concurrent demotion of both
+    const [r1, r2] = await Promise.all([
+      Promise.resolve(users.setRoleIfNotLastAdmin(alice.id, "member")),
+      Promise.resolve(users.setRoleIfNotLastAdmin(bob.id, "member")),
+    ]);
+    // Exactly one should succeed; the other gets "would_orphan"
+    const oks = [r1, r2].filter((r) => r === "ok").length;
+    const orphans = [r1, r2].filter((r) => r === "would_orphan").length;
+    expect(oks).toBe(1);
+    expect(orphans).toBe(1);
+    // System retains at least one admin
+    expect(users.countAdmins()).toBe(1);
+  });
+
+  it("deleteUserIfNotLastAdmin returns 'would_orphan' for the only admin", async () => {
+    const alice = await users.createUser("alice", "pw-alice", "admin");
+    expect(users.deleteUserIfNotLastAdmin(alice.id)).toBe("would_orphan");
+    expect(users.findById(alice.id)).not.toBeNull();
+  });
+
+  it("deleteUserIfNotLastAdmin allows deleting a member at any count", async () => {
+    await users.createUser("alice", "pw-alice", "admin");
+    const bob = await users.createUser("bob", "pw-bob-bob", "member");
+    expect(users.deleteUserIfNotLastAdmin(bob.id)).toBe("ok");
+    expect(users.findById(bob.id)).toBeNull();
+  });
+
+  it("deleteUserIfNotLastAdmin: concurrent deletes of two admins keep one admin", async () => {
+    const alice = await users.createUser("alice", "pw-alice", "admin");
+    const bob = await users.createUser("bob", "pw-bob-bob", "admin");
+    const [r1, r2] = await Promise.all([
+      Promise.resolve(users.deleteUserIfNotLastAdmin(alice.id)),
+      Promise.resolve(users.deleteUserIfNotLastAdmin(bob.id)),
+    ]);
+    const oks = [r1, r2].filter((r) => r === "ok").length;
+    const orphans = [r1, r2].filter((r) => r === "would_orphan").length;
+    expect(oks).toBe(1);
+    expect(orphans).toBe(1);
+    expect(users.countAdmins()).toBe(1);
+  });
 });

@@ -58,6 +58,7 @@ export function createUsersRouter(
 
   router.delete("/:id", (req, res) => {
     const targetId = req.params.id;
+    // Snapshot target's username BEFORE deletion for audit
     const target = users.findById(targetId);
     if (!target) {
       res.status(404).json({ error: "not found" });
@@ -67,15 +68,16 @@ export function createUsersRouter(
       res.status(400).json({ error: "cannot delete self" });
       return;
     }
-    if (target.role === "admin" && users.countAdmins() <= 1) {
-      res.status(400).json({ error: "cannot delete last admin" });
-      return;
-    }
-    const deleted = users.deleteUser(targetId);
-    if (!deleted) {
+    const result = users.deleteUserIfNotLastAdmin(targetId);
+    if (result === "not_found") {
       res.status(404).json({ error: "not found" });
       return;
     }
+    if (result === "would_orphan") {
+      res.status(400).json({ error: "cannot delete last admin" });
+      return;
+    }
+    // FK CASCADE removes sessions; explicit call is belt-and-suspenders
     sessions.deleteAllForUser(targetId);
     try {
       audit.record({
@@ -128,34 +130,35 @@ export function createUsersRouter(
       res.status(400).json({ error: "invalid role" });
       return;
     }
-    const target = users.findById(targetId);
-    if (!target) {
+    // Snapshot the target's old role and username for audit (BEFORE the atomic update,
+    // so we record what actually changed; if the user is gone we'll skip audit).
+    const targetBefore = users.findById(targetId);
+    if (!targetBefore) {
       res.status(404).json({ error: "not found" });
       return;
     }
-    if (target.role === newRole) {
-      res.status(204).end();
+    const result = users.setRoleIfNotLastAdmin(targetId, newRole);
+    if (result === "not_found") {
+      res.status(404).json({ error: "not found" });
       return;
     }
-    if (target.role === "admin" && newRole === "member" && users.countAdmins() <= 1) {
+    if (result === "would_orphan") {
       res.status(400).json({ error: "cannot demote last admin" });
       return;
     }
-    const changed = users.setRole(targetId, newRole);
-    if (!changed) {
-      res.status(404).json({ error: "not found" });
-      return;
+    // Only audit when the role actually changed
+    if (targetBefore.role !== newRole) {
+      try {
+        audit.record({
+          actorId: req.user!.id, actorUsername: req.user!.username,
+          targetUserId: targetBefore.id, targetUsername: targetBefore.username,
+          action: "user.role_changed",
+        });
+      } catch (auditErr) {
+        logger.warn({ err: auditErr, action: "user.role_changed" }, "audit insert failed");
+      }
+      logger.info({ actorId: req.user!.id, targetId, newRole }, "User role changed");
     }
-    try {
-      audit.record({
-        actorId: req.user!.id, actorUsername: req.user!.username,
-        targetUserId: target.id, targetUsername: target.username,
-        action: "user.role_changed",
-      });
-    } catch (auditErr) {
-      logger.warn({ err: auditErr, action: "user.role_changed" }, "audit insert failed");
-    }
-    logger.info({ actorId: req.user!.id, targetId, newRole }, "User role changed");
     res.status(204).end();
   });
 

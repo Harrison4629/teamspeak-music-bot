@@ -25,7 +25,9 @@ export interface UserStore {
   verifyPassword(plain: string, hash: string): Promise<boolean>;
   changePassword(userId: string, newPassword: string): Promise<void>;
   setRole(userId: string, role: UserRole): boolean;
+  setRoleIfNotLastAdmin(id: string, newRole: UserRole): "ok" | "not_found" | "would_orphan";
   deleteUser(id: string): boolean;
+  deleteUserIfNotLastAdmin(id: string): "ok" | "not_found" | "would_orphan";
   listUsers(): Array<{ id: string; username: string; createdAt: number; role: UserRole }>;
 }
 
@@ -125,6 +127,21 @@ export function createUserStore(db: Database.Database): UserStore {
       return result.changes > 0;
     },
 
+    setRoleIfNotLastAdmin(id, newRole) {
+      const tx = db.transaction(() => {
+        const row = findByIdStmt.get(id) as UserRow | undefined;
+        if (!row) return "not_found" as const;
+        if (row.role === newRole) return "ok" as const; // no-op
+        if (row.role === "admin" && newRole === "member") {
+          const adminCount = (countAdminsStmt.get() as { n: number }).n;
+          if (adminCount <= 1) return "would_orphan" as const;
+        }
+        updateRoleStmt.run(newRole, Date.now(), id);
+        return "ok" as const;
+      });
+      return tx();
+    },
+
     listUsers() {
       return listUsersStmt.all() as Array<{ id: string; username: string; createdAt: number; role: UserRole }>;
     },
@@ -132,6 +149,20 @@ export function createUserStore(db: Database.Database): UserStore {
     deleteUser(id) {
       const result = deleteUserStmt.run(id);
       return result.changes > 0;
+    },
+
+    deleteUserIfNotLastAdmin(id) {
+      const tx = db.transaction(() => {
+        const row = findByIdStmt.get(id) as UserRow | undefined;
+        if (!row) return "not_found" as const;
+        if (row.role === "admin") {
+          const adminCount = (countAdminsStmt.get() as { n: number }).n;
+          if (adminCount <= 1) return "would_orphan" as const;
+        }
+        deleteUserStmt.run(id);
+        return "ok" as const;
+      });
+      return tx();
     },
   };
 }
