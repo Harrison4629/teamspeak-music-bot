@@ -4,6 +4,7 @@ import type { UserStore } from "../../data/users.js";
 import { UsernameTakenError } from "../../data/users.js";
 import type { SessionStore } from "../../data/sessions.js";
 import type { AuditStore } from "../../data/audit.js";
+import { extractSessionToken } from "../auth/validateSession.js";
 
 function isValidUsername(v: unknown): v is string {
   return typeof v === "string" && /^[A-Za-z0-9_\-.]{3,32}$/.test(v);
@@ -33,11 +34,15 @@ export function createUsersRouter(
     }
     try {
       const u = await users.createUser(username, password);
-      audit.record({
-        actorId: req.user!.id, actorUsername: req.user!.username,
-        targetUserId: u.id, targetUsername: u.username,
-        action: "user.created",
-      });
+      try {
+        audit.record({
+          actorId: req.user!.id, actorUsername: req.user!.username,
+          targetUserId: u.id, targetUsername: u.username,
+          action: "user.created",
+        });
+      } catch (auditErr) {
+        logger.warn({ err: auditErr, action: "user.created" }, "audit insert failed");
+      }
       logger.info({ createdBy: req.user!.id, newUserId: u.id, username }, "User created");
       res.status(201).json({ id: u.id, username: u.username });
     } catch (err) {
@@ -67,11 +72,15 @@ export function createUsersRouter(
       return;
     }
     sessions.deleteAllForUser(targetId);
-    audit.record({
-      actorId: req.user!.id, actorUsername: req.user!.username,
-      targetUserId: target.id, targetUsername: target.username,
-      action: "user.deleted",
-    });
+    try {
+      audit.record({
+        actorId: req.user!.id, actorUsername: req.user!.username,
+        targetUserId: target.id, targetUsername: target.username,
+        action: "user.deleted",
+      });
+    } catch (auditErr) {
+      logger.warn({ err: auditErr, action: "user.deleted" }, "audit insert failed");
+    }
     logger.info({ deletedBy: req.user!.id, deletedUserId: targetId }, "User deleted");
     res.status(204).end();
   });
@@ -90,13 +99,19 @@ export function createUsersRouter(
     }
     await users.changePassword(targetId, newPassword);
     // Invalidate all sessions for the target user (except current actor's if it's the same user)
-    const exceptToken = targetId === req.user!.id ? undefined : undefined;
+    const exceptToken = targetId === req.user!.id
+      ? (extractSessionToken(req.headers.cookie) ?? undefined)
+      : undefined;
     sessions.deleteAllForUser(targetId, exceptToken);
-    audit.record({
-      actorId: req.user!.id, actorUsername: req.user!.username,
-      targetUserId: target.id, targetUsername: target.username,
-      action: "user.password_reset",
-    });
+    try {
+      audit.record({
+        actorId: req.user!.id, actorUsername: req.user!.username,
+        targetUserId: target.id, targetUsername: target.username,
+        action: "user.password_reset",
+      });
+    } catch (auditErr) {
+      logger.warn({ err: auditErr, action: "user.password_reset" }, "audit insert failed");
+    }
     logger.info({ resetBy: req.user!.id, targetUserId: targetId }, "Password reset");
     res.status(204).end();
   });

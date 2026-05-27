@@ -88,11 +88,15 @@ export function createSessionRouter(
       }
       const { token } = sessions.createSession(user.id);
       setSessionCookie(res, token);
-      audit.record({
-        actorId: user.id, actorUsername: user.username,
-        targetUserId: user.id, targetUsername: user.username,
-        action: "admin.first_created",
-      });
+      try {
+        audit.record({
+          actorId: user.id, actorUsername: user.username,
+          targetUserId: user.id, targetUsername: user.username,
+          action: "admin.first_created",
+        });
+      } catch (auditErr) {
+        logger.warn({ err: auditErr, action: "admin.first_created" }, "audit insert failed");
+      }
       logger.info({ userId: user.id, username }, "First admin created");
       res.json({ id: user.id, username: user.username });
     } catch (err) {
@@ -151,11 +155,15 @@ export function createSessionRouter(
     await users.changePassword(u.id, newPassword);
     const currentToken = parseTokenFromCookie(req.headers.cookie);
     sessions.deleteAllForUser(u.id, currentToken ?? undefined);
-    audit.record({
-      actorId: u.id, actorUsername: u.username,
-      targetUserId: u.id, targetUsername: u.username,
-      action: "user.password_changed",
-    });
+    try {
+      audit.record({
+        actorId: u.id, actorUsername: u.username,
+        targetUserId: u.id, targetUsername: u.username,
+        action: "user.password_changed",
+      });
+    } catch (auditErr) {
+      logger.warn({ err: auditErr, action: "user.password_changed" }, "audit insert failed");
+    }
     res.status(204).end();
   });
 

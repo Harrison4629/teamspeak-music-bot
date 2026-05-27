@@ -137,4 +137,56 @@ describe("users router", () => {
       .send({ newPassword: "short" });
     expect(res.status).toBe(400);
   });
+
+  it("returns 201 even if audit insert fails (POST /api/users)", async () => {
+    // Build a broken audit store that throws on record()
+    const brokenAudit = {
+      record: () => { throw new Error("simulated disk-full"); },
+      list: () => [],
+    };
+    // Reassemble app with the broken audit
+    const localApp = express();
+    localApp.use(express.json());
+    localApp.use(cookieParser());
+    localApp.use("/api", createRequireAuth(sessions));
+    localApp.use(
+      "/api/users",
+      createUsersRouter(users, sessions, brokenAudit, pino({ level: "silent" }))
+    );
+    const res = await request(localApp)
+      .post("/api/users")
+      .set("Cookie", aliceCookie)
+      .send({ username: "charlie", password: "charlie-pw" });
+    expect(res.status).toBe(201);
+    expect(users.countUsers()).toBe(3);
+  });
+
+  it("POST /:id/reset-password on self preserves the actor's current session", async () => {
+    // Alice resets her OWN password
+    const res = await request(app)
+      .post(`/api/users/${aliceId}/reset-password`)
+      .set("Cookie", aliceCookie)
+      .send({ newPassword: "alice-new-pw" });
+    expect(res.status).toBe(204);
+
+    // Alice's CURRENT session should still work
+    // (we'd need a protected endpoint to verify; use GET /api/users which is already mounted)
+    const followUp = await request(app).get("/api/users").set("Cookie", aliceCookie);
+    expect(followUp.status).toBe(200);
+
+    // The password hash IS updated (sanity check)
+    const alice = users.findById(aliceId);
+    expect(await users.verifyPassword("alice-new-pw", alice!.passwordHash)).toBe(true);
+  });
+
+  it("POST /:id/reset-password on another user does NOT preserve any of target's sessions", async () => {
+    const bobToken = sessions.createSession(bobId).token;
+    const res = await request(app)
+      .post(`/api/users/${bobId}/reset-password`)
+      .set("Cookie", aliceCookie)
+      .send({ newPassword: "bob-new-pw" });
+    expect(res.status).toBe(204);
+    // Bob's session should be dead
+    expect(sessions.validateAndTouch(bobToken)).toBeNull();
+  });
 });
