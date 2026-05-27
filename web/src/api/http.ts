@@ -2,11 +2,14 @@ import router from '../router/index.js';
 import { useSession } from '../composables/useSession.js';
 
 let installed = false;
+const nativeFetch: typeof window.fetch = window.fetch.bind(window);
 
 /**
  * Wraps fetch so every call:
  *   - sends cookies (`credentials: 'same-origin'`)
  *   - on 401 from /api/*: clear local session, redirect to /login
+ *
+ * Always uses the captured native fetch, never the (possibly wrapped) global.
  */
 export function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const merged: RequestInit = {
@@ -14,7 +17,7 @@ export function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
     ...init,
     headers: { ...(init.headers ?? {}) },
   };
-  return fetch(input, merged).then(async (res) => {
+  return nativeFetch(input, merged).then(async (res) => {
     if (res.status === 401 && shouldTriggerRefresh(input)) {
       const session = useSession();
       await session.refresh();
@@ -39,10 +42,8 @@ function shouldTriggerRefresh(input: RequestInfo | URL): boolean {
 export function installApiClient(): void {
   if (installed) return;
   installed = true;
-  const original = window.fetch.bind(window);
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     return apiFetch(input, init ?? {});
   }) as typeof window.fetch;
-  // Keep original accessible if anything needs to bypass
-  (window as unknown as { __originalFetch?: typeof fetch }).__originalFetch = original;
+  (window as unknown as { __originalFetch?: typeof fetch }).__originalFetch = nativeFetch;
 }
