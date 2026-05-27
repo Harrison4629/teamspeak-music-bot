@@ -517,6 +517,25 @@
         </div>
       </div>
     </section>
+
+    <!-- Audit Log -->
+    <section class="settings-section">
+      <h2 class="section-title">
+        操作审计
+        <button class="audit-refresh-btn" @click="loadAudit" :disabled="auditLoading" title="刷新">
+          <Icon icon="mdi:refresh" :class="{ spinning: auditLoading }" />
+        </button>
+      </h2>
+      <div v-if="auditLoadError" class="user-error">{{ auditLoadError }}</div>
+      <div v-else-if="auditEntries.length === 0 && !auditLoading" class="user-empty">暂无操作记录</div>
+      <div v-else class="audit-list">
+        <div v-for="e in auditEntries" :key="e.id" class="audit-row">
+          <div class="audit-time">{{ formatDateTime(e.timestamp) }}</div>
+          <div class="audit-actor">{{ e.actorUsername ?? '—' }}</div>
+          <div class="audit-action" :class="auditActionClass(e.action)">{{ describeAction(e) }}</div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -1002,12 +1021,67 @@ function formatDate(ms: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// --- Audit Log ---
+interface AuditEntry {
+  id: number;
+  timestamp: number;
+  actorId: string | null;
+  actorUsername: string | null;
+  targetUserId: string | null;
+  targetUsername: string | null;
+  action: string;
+}
+
+const auditEntries = ref<AuditEntry[]>([]);
+const auditLoadError = ref('');
+const auditLoading = ref(false);
+
+async function loadAudit() {
+  auditLoadError.value = '';
+  auditLoading.value = true;
+  try {
+    const res = await fetch('/api/audit?limit=100');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    auditEntries.value = body.entries ?? [];
+  } catch (e) {
+    auditLoadError.value = (e as Error).message;
+  } finally {
+    auditLoading.value = false;
+  }
+}
+
+function formatDateTime(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function describeAction(e: AuditEntry): string {
+  const target = e.targetUsername ?? e.targetUserId ?? '—';
+  switch (e.action) {
+    case 'admin.first_created':     return `创建首位管理员 ${target}`;
+    case 'user.created':            return `创建用户 ${target}`;
+    case 'user.deleted':            return `删除用户 ${target}`;
+    case 'user.password_reset':     return `重置 ${target} 的密码`;
+    case 'user.password_changed':   return `修改自己的密码`;
+    default:                        return `${e.action} → ${target}`;
+  }
+}
+
+function auditActionClass(action: string): string {
+  if (action === 'user.deleted') return 'audit-action-danger';
+  if (action === 'user.password_reset' || action === 'user.password_changed') return 'audit-action-warn';
+  return 'audit-action-ok';
+}
+
 onMounted(() => {
   store.fetchBots(); // Refresh bot status on page visit
   checkAuthStatus();
   loadQuality();
   loadIdleTimeout();
   loadUsers();
+  loadAudit();
 });
 
 onUnmounted(() => {
@@ -1652,4 +1726,54 @@ onUnmounted(() => {
 .user-error { color: #e26a6a; }
 .modal-hint { color: var(--text-secondary); font-size: 12px; margin: 0 0 8px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+.audit-refresh-btn {
+  margin-left: 10px;
+  border: 0; background: transparent;
+  color: var(--text-secondary); cursor: pointer;
+  display: inline-flex; align-items: center;
+  font-size: 16px;
+  &:hover { color: var(--text-primary); }
+  &:disabled { opacity: 0.5; cursor: progress; }
+}
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.audit-list {
+  display: flex; flex-direction: column;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  max-height: 480px;
+  overflow-y: auto;
+}
+.audit-row {
+  display: grid;
+  grid-template-columns: 170px 120px 1fr;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+  &:last-child { border-bottom: 0; }
+}
+.audit-time {
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.audit-actor {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.audit-action { color: var(--text-primary); }
+.audit-action-ok      { color: var(--text-primary); }
+.audit-action-warn    { color: #d3a44b; }
+.audit-action-danger  { color: #e26a6a; }
+
+@media (max-width: 640px) {
+  .audit-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
 </style>
