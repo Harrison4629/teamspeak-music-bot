@@ -55,4 +55,19 @@ describe("csrfOriginCheck middleware", () => {
       .set("Referer", "https://evil.com/some/path");
     expect(res.status).toBe(403);
   });
+
+  // Documents the server side of the QR-login outage: a `no-referrer` document
+  // policy makes the browser send the literal `Origin: null` on same-origin
+  // POSTs, which this guard cannot parse a host from and therefore rejects.
+  // The fix lives in the frontend (referrer policy -> same-origin); this test
+  // pins the gate behavior so the interaction stays understood. See
+  // src/web/referrer-policy.test.ts.
+  it('rejects POST with the literal Origin: "null" (no-referrer downgrade)', async () => {
+    const res = await request(app)
+      .post("/")
+      .set("Host", "example.com")
+      .set("Origin", "null");
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "bad origin" });
+  });
 });
