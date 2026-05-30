@@ -1326,6 +1326,7 @@ function describeAction(e: AuditEntry): string {
     case 'user.password_reset':     return `重置 ${target} 的密码`;
     case 'user.password_changed':   return `修改自己的密码`;
     case 'user.role_changed':       return `变更 ${target} 的角色`;
+    case 'user.permissions_changed': return `权限变更 → ${target}`;
     default:                        return `${e.action} → ${target}`;
   }
 }

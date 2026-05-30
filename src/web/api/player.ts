@@ -16,6 +16,13 @@ export function createPlayerRouter(
 ): Router {
   const router = Router();
 
+  // Access check runs BEFORE the existence/resolver check so a member who is
+  // not allowed a bot always gets a uniform 403 — whether or not the bot
+  // exists — instead of a 404 that would leak which bot IDs are real.
+  // requireBotAccess only needs req.params.botId and req.user (set by the
+  // global requireAuth mounted earlier), so it works before the resolver.
+  router.use("/:botId", requireBotAccess("botId"));
+
   router.use("/:botId", (req, res, next) => {
     const bot = botManager.getBot(req.params.botId);
     if (!bot) {
@@ -25,8 +32,6 @@ export function createPlayerRouter(
     (req as any).bot = bot;
     next();
   });
-
-  router.use("/:botId", requireBotAccess("botId"));
 
   /** Map API platform string to the corresponding command flag. */
   const platformFlag = (platform: unknown): string => {
