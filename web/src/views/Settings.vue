@@ -410,7 +410,7 @@
     </section>
     
     <!-- Idle Timeout -->
-    <section class="settings-section">
+    <section v-if="can('bot.manage')" class="settings-section">
       <h2 class="section-title">行为设置</h2>
       <div class="setting-row">
         <div class="setting-label">
@@ -436,7 +436,7 @@
     </section>
 
     <!-- Bot Profile (TeamSpeak Behavior) -->
-    <section class="settings-section">
+    <section v-if="can('bot.manage')" class="settings-section">
       <h2 class="section-title">机器人 Profile（TeamSpeak 行为）</h2>
       <p class="profile-section-hint">控制 bot 在 TeamSpeak 上自动同步歌曲信息的方式。⚠️ 标记的项会触发频道里所有人的提示音。</p>
       <div v-if="store.bots.length === 0" class="empty-hint">还没有机器人，先在上面创建一个。</div>
