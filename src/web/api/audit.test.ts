@@ -6,6 +6,7 @@ import { createDatabase, type BotDatabase } from "../../data/database.js";
 import { createUserStore } from "../../data/users.js";
 import { createSessionStore } from "../../data/sessions.js";
 import { createAuditStore } from "../../data/audit.js";
+import { createPermissionStore } from "../../data/permissions.js";
 import { createRequireAuth } from "../middleware/requireAuth.js";
 import { createAuditRouter } from "./audit.js";
 import { SESSION_COOKIE_NAME } from "../auth/validateSession.js";
@@ -20,6 +21,7 @@ describe("audit router", () => {
     const users = createUserStore(botDb.db);
     const sessions = createSessionStore(botDb.db);
     const audit = createAuditStore(botDb.db);
+    const permissions = createPermissionStore(botDb.db);
     const alice = await users.createUser("alice", "pw-alice", "admin");
     cookie = `${SESSION_COOKIE_NAME}=${sessions.createSession(alice.id).token}`;
     for (let i = 0; i < 3; i++) {
@@ -32,7 +34,7 @@ describe("audit router", () => {
     app = express();
     app.use(express.json());
     app.use(cookieParser());
-    app.use("/api", createRequireAuth(sessions));
+    app.use("/api", createRequireAuth(sessions, permissions));
     app.use("/api/audit", createAuditRouter(audit));
   });
 

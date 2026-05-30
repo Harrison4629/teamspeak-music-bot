@@ -7,6 +7,7 @@ import { createDatabase, type BotDatabase } from "../../data/database.js";
 import { createUserStore, type UserStore } from "../../data/users.js";
 import { createSessionStore, type SessionStore } from "../../data/sessions.js";
 import { createAuditStore } from "../../data/audit.js";
+import { createPermissionStore } from "../../data/permissions.js";
 import { createRequireAuth } from "../middleware/requireAuth.js";
 import { createUsersRouter } from "./users.js";
 import { SESSION_COOKIE_NAME } from "../auth/validateSession.js";
@@ -15,7 +16,8 @@ function makeApp(botDb: BotDatabase, users: UserStore, sessions: SessionStore) {
   const app = express();
   app.use(express.json());
   app.use(cookieParser());
-  const requireAuth = createRequireAuth(sessions);
+  const permissions = createPermissionStore(botDb.db);
+  const requireAuth = createRequireAuth(sessions, permissions);
   const audit = createAuditStore(botDb.db);
   app.use("/api", requireAuth);
   app.use("/api/users", createUsersRouter(users, sessions, audit, pino({ level: "silent" })));
@@ -148,7 +150,7 @@ describe("users router", () => {
     const localApp = express();
     localApp.use(express.json());
     localApp.use(cookieParser());
-    localApp.use("/api", createRequireAuth(sessions));
+    localApp.use("/api", createRequireAuth(sessions, createPermissionStore(botDb.db)));
     localApp.use(
       "/api/users",
       createUsersRouter(users, sessions, brokenAudit, pino({ level: "silent" }))
