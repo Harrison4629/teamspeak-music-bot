@@ -149,7 +149,10 @@ onMounted(async () => {
   // router guard sets scopedBotId tentatively from ?bot, but applyScopeFromQuery
   // validates it against the loaded bots (locks if it exists, clears if stale).
   await playerStore.fetchBots();
-  const qBot = typeof route.query.bot === 'string' ? route.query.bot : null;
+  // Read from the authoritative current route (not a possibly-stale reactive
+  // snapshot) so the scope reconciles against the ?bot present at refresh time.
+  const routeBot = router.currentRoute.value.query.bot;
+  const qBot = typeof routeBot === 'string' ? routeBot : null;
   playerStore.applyScopeFromQuery(qBot);
 });
 

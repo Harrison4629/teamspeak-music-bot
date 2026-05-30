@@ -11,4 +11,7 @@ installApiClient();
 const app = createApp(App);
 app.use(createPinia());
 app.use(router);
-app.mount('#app');
+// Wait for the initial navigation (and the beforeEach guard that reads ?bot)
+// to fully resolve before mounting, so the reactive route query is populated
+// when App.onMounted runs and the dedicated-bot scope locks the right bot.
+router.isReady().then(() => app.mount('#app'));
