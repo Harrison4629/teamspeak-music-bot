@@ -126,7 +126,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
     createAuthRouter(options.neteaseProvider, options.qqProvider, options.bilibiliProvider, logger, options.cookieStore)
   );
   // admin-only routes
-  app.use("/api/users", requireAdmin, createUsersRouter(users, sessions, audit, logger));
+  app.use("/api/users", requireAdmin, createUsersRouter(users, sessions, audit, logger, permissions));
   app.use("/api/audit", requireAdmin, createAuditRouter(audit));
 
   // ─── Static SPA (public) ────────────────────────────────────────────────

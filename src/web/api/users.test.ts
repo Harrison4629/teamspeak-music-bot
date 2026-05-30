@@ -6,8 +6,8 @@ import pino from "pino";
 import { createDatabase, type BotDatabase } from "../../data/database.js";
 import { createUserStore, type UserStore } from "../../data/users.js";
 import { createSessionStore, type SessionStore } from "../../data/sessions.js";
-import { createAuditStore } from "../../data/audit.js";
-import { createPermissionStore } from "../../data/permissions.js";
+import { createAuditStore, type AuditStore } from "../../data/audit.js";
+import { createPermissionStore, type PermissionStore } from "../../data/permissions.js";
 import { createRequireAuth } from "../middleware/requireAuth.js";
 import { createUsersRouter } from "./users.js";
 import { SESSION_COOKIE_NAME } from "../auth/validateSession.js";
@@ -20,8 +20,8 @@ function makeApp(botDb: BotDatabase, users: UserStore, sessions: SessionStore) {
   const requireAuth = createRequireAuth(sessions, permissions);
   const audit = createAuditStore(botDb.db);
   app.use("/api", requireAuth);
-  app.use("/api/users", createUsersRouter(users, sessions, audit, pino({ level: "silent" })));
-  return app;
+  app.use("/api/users", createUsersRouter(users, sessions, audit, pino({ level: "silent" }), permissions));
+  return { app, permissions, audit };
 }
 
 describe("users router", () => {
@@ -29,6 +29,8 @@ describe("users router", () => {
   let users: UserStore;
   let sessions: SessionStore;
   let app: express.Express;
+  let permissions: PermissionStore;
+  let audit: AuditStore;
   let aliceId: string;
   let aliceCookie: string;
   let bobId: string;
@@ -37,7 +39,7 @@ describe("users router", () => {
     botDb = createDatabase(":memory:");
     users = createUserStore(botDb.db);
     sessions = createSessionStore(botDb.db);
-    app = makeApp(botDb, users, sessions);
+    ({ app, permissions, audit } = makeApp(botDb, users, sessions));
     const alice = await users.createUser("alice", "pw-alice", "admin");
     aliceId = alice.id;
     aliceCookie = `${SESSION_COOKIE_NAME}=${sessions.createSession(alice.id).token}`;
@@ -153,7 +155,7 @@ describe("users router", () => {
     localApp.use("/api", createRequireAuth(sessions, createPermissionStore(botDb.db)));
     localApp.use(
       "/api/users",
-      createUsersRouter(users, sessions, brokenAudit, pino({ level: "silent" }))
+      createUsersRouter(users, sessions, brokenAudit, pino({ level: "silent" }), createPermissionStore(botDb.db))
     );
     const res = await request(localApp)
       .post("/api/users")
@@ -255,5 +257,88 @@ describe("users router", () => {
       .set("Cookie", aliceCookie)
       .send({ role: "admin" });
     expect(res.status).toBe(404);
+  });
+
+  it("GET /:id/permissions returns empty arrays for a fresh member", async () => {
+    const res = await request(app)
+      .get(`/api/users/${bobId}/permissions`)
+      .set("Cookie", aliceCookie);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ capabilities: [], bots: [] });
+  });
+
+  it("GET /:id/permissions 404 on unknown user", async () => {
+    const res = await request(app)
+      .get(`/api/users/not-a-real-id/permissions`)
+      .set("Cookie", aliceCookie);
+    expect(res.status).toBe(404);
+  });
+
+  it("PUT /:id/permissions sets permissions, persists, and audits", async () => {
+    const before = audit.list(100, 0).filter((e) => e.action === "user.permissions_changed");
+    expect(before).toHaveLength(0);
+
+    const put = await request(app)
+      .put(`/api/users/${bobId}/permissions`)
+      .set("Cookie", aliceCookie)
+      .send({ capabilities: ["player.control"], bots: "all" });
+    expect(put.status).toBe(200);
+
+    const get = await request(app)
+      .get(`/api/users/${bobId}/permissions`)
+      .set("Cookie", aliceCookie);
+    expect(get.status).toBe(200);
+    expect(get.body).toEqual({ capabilities: ["player.control"], bots: "all" });
+
+    const rows = audit.list(100, 0).filter((e) => e.action === "user.permissions_changed");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].actorId).toBe(aliceId);
+    expect(rows[0].targetUserId).toBe(bobId);
+  });
+
+  it("PUT /:id/permissions drops unknown capability tokens", async () => {
+    const put = await request(app)
+      .put(`/api/users/${bobId}/permissions`)
+      .set("Cookie", aliceCookie)
+      .send({ capabilities: ["player.control", "bogus"], bots: [] });
+    expect(put.status).toBe(200);
+    expect(permissions.getCapabilities(bobId)).toEqual(["player.control"]);
+  });
+
+  it("PUT /:id/permissions 404 on unknown user", async () => {
+    const res = await request(app)
+      .put(`/api/users/not-a-real-id/permissions`)
+      .set("Cookie", aliceCookie)
+      .send({ capabilities: ["player.control"], bots: "all" });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST / seeds the basic tier for a new member", async () => {
+    const res = await request(app)
+      .post("/api/users")
+      .set("Cookie", aliceCookie)
+      .send({ username: "dave", password: "dave-pw-pw" });
+    expect(res.status).toBe(201);
+    const perms = await request(app)
+      .get(`/api/users/${res.body.id}/permissions`)
+      .set("Cookie", aliceCookie);
+    expect(perms.status).toBe(200);
+    expect(perms.body).toEqual({
+      capabilities: ["player.control", "player.queue"],
+      bots: "all",
+    });
+  });
+
+  it("POST / does NOT seed permissions for a new admin", async () => {
+    const res = await request(app)
+      .post("/api/users")
+      .set("Cookie", aliceCookie)
+      .send({ username: "erin", password: "erin-pw-pw", role: "admin" });
+    expect(res.status).toBe(201);
+    const perms = await request(app)
+      .get(`/api/users/${res.body.id}/permissions`)
+      .set("Cookie", aliceCookie);
+    expect(perms.status).toBe(200);
+    expect(perms.body).toEqual({ capabilities: [], bots: [] });
   });
 });
