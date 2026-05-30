@@ -47,4 +47,15 @@ describe("requireBotAccess", () => {
   it("200 for admin", async () => {
     expect((await request(appWith(admin)).post("/bot/b1")).status).toBe(200);
   });
+  it("401 when unauthenticated", async () => {
+    const app = express();
+    app.post("/bot/:botId", requireBotAccess("botId"), (_r, res) => res.json({ ok: true }));
+    expect((await request(app).post("/bot/b1")).status).toBe(401);
+  });
+  it("403 when the route param is absent", async () => {
+    const app = express();
+    app.use((req, _res, next) => { (req as any).user = member([], ["b1"]); next(); });
+    app.post("/bot/:botId", requireBotAccess("nope"), (_r, res) => res.json({ ok: true }));
+    expect((await request(app).post("/bot/b1")).status).toBe(403);
+  });
 });
