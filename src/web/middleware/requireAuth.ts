@@ -9,7 +9,13 @@ import {
 
 declare module "express-serve-static-core" {
   interface Request {
-    user?: { id: string; username: string; role: "admin" | "member" };
+    user?: {
+      id: string;
+      username: string;
+      role: "admin" | "member";
+      capabilities?: Set<string>;
+      bots?: "all" | Set<string>;
+    };
   }
 }
 
