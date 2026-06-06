@@ -397,6 +397,17 @@ export const usePlayerStore = defineStore('player', {
       if (bot) bot.playMode = mode;
     },
 
+    async startFm(platform: Source = 'netease') {
+      if (!this.activeBotId) return;
+      const res = await axios.post(`/api/player/${this.activeBotId}/fm`, { platform });
+      if (res.data?.message) {
+        this.notify(res.data.message, res.data.ok === false ? 'error' : 'info');
+      }
+      this._setTiming(this.activeBotId, { serverElapsed: 0 });
+      this._syncAfterAction();
+      this.fetchQueue();
+    },
+
     async fetchHomeData() {
       // Always check auth status first — if it changed since the cached
       // fetch (e.g., user logged in/out as a different account), the

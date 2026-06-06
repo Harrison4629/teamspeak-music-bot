@@ -68,6 +68,7 @@ export class BotInstance extends EventEmitter {
   private channelUserCount = 0;
   private profileManager: BotProfileManager;
   private isFmMode = false;
+  private fmProvider: MusicProvider | null = null;
 
   constructor(options: BotInstanceOptions) {
     super();
@@ -319,7 +320,7 @@ export class BotInstance extends EventEmitter {
       case "album":
         return this.cmdAlbum(cmd);
       case "fm":
-        return this.cmdFm();
+        return this.cmdFm(cmd);
       case "artist":
         return this.cmdArtist(cmd);
       case "vote":
@@ -341,6 +342,11 @@ export class BotInstance extends EventEmitter {
     if (platform === "bilibili") return this.bilibiliProvider;
     if (platform === "youtube") return this.youtubeProvider;
     return platform === "qq" ? this.qqProvider : this.neteaseProvider;
+  }
+
+  private disableFmMode(): void {
+    this.isFmMode = false;
+    this.fmProvider = null;
   }
 
   private getProvider(flags: Set<string>): MusicProvider {
@@ -390,15 +396,21 @@ export class BotInstance extends EventEmitter {
         platform: song.platform,
         coverUrl: song.coverUrl,
       });
-      // Update bot presence (fire-and-forget — never blocks playback)
-      this.profileManager.onSongChange(song).catch((err) => {
-        this.logger.warn({ err }, "Profile update failed after song change");
-      });
+      // Keep TeamSpeak-side profile updates on the same path for play/next/FM.
+      await this.syncProfileToSong(song);
       this.emit("stateChange");
       return true;
     } catch (err) {
       this.logger.error({ err, songId: song.id }, "Failed to resolve URL");
       return false;
+    }
+  }
+
+  private async syncProfileToSong(song: QueuedSong | null): Promise<void> {
+    try {
+      await this.profileManager.onSongChange(song);
+    } catch (err) {
+      this.logger.warn({ err }, "Profile update failed after song change");
     }
   }
 
@@ -411,7 +423,7 @@ export class BotInstance extends EventEmitter {
 
     const song = result.songs[0];
     this.queue.clear();
-    this.isFmMode = false;
+    this.disableFmMode();
     this.queue.add({ ...song, platform: provider.platform });
     this.queue.play();
 
@@ -496,7 +508,7 @@ export class BotInstance extends EventEmitter {
   private cmdStop(): string {
     this.player.stop();
     this.queue.clear();
-    this.isFmMode = false;
+    this.disableFmMode();
     this.profileManager.onSongChange(null).catch((err) => {
       this.logger.warn({ err }, "Profile restore failed on stop");
     });
@@ -554,7 +566,7 @@ export class BotInstance extends EventEmitter {
   private cmdClear(): string {
     this.player.stop();
     this.queue.clear();
-    this.isFmMode = false;
+    this.disableFmMode();
     this.profileManager.onSongChange(null).catch((err) => {
       this.logger.warn({ err }, "Profile restore failed on clear");
     });
@@ -627,7 +639,7 @@ export class BotInstance extends EventEmitter {
     if (songs.length === 0) return "Playlist is empty or not found";
 
     this.queue.clear();
-    this.isFmMode = false;
+    this.disableFmMode();
     for (const song of songs) {
       this.queue.add({ ...song, platform: provider.platform });
     }
@@ -662,7 +674,7 @@ export class BotInstance extends EventEmitter {
     if (songs.length === 0) return "Album is empty or not found";
 
     this.queue.clear();
-    this.isFmMode = false;
+    this.disableFmMode();
     for (const song of songs) {
       this.queue.add({ ...song, platform: provider.platform });
     }
@@ -672,26 +684,32 @@ export class BotInstance extends EventEmitter {
     return `Loaded ${songs.length} songs. Now playing: ${first?.name ?? "unknown"}`;
   }
 
-  private async cmdFm(): Promise<string> {
-    if (!this.neteaseProvider.getPersonalFm) {
-      return "Personal FM is only available for NetEase Cloud Music";
+  private async cmdFm(cmd: ParsedCommand): Promise<string> {
+    return this.startFm(this.getProvider(cmd.flags));
+  }
+
+  async startFm(provider: MusicProvider = this.neteaseProvider): Promise<string> {
+    if (!provider.getPersonalFm) {
+      return `Personal FM is not available for ${provider.platform}`;
     }
-    const songs = await this.neteaseProvider.getPersonalFm();
+    const songs = await provider.getPersonalFm();
     if (songs.length === 0)
       return "No FM songs available (need to login first)";
 
     this.queue.clear();
     for (const song of songs) {
-      this.queue.add({ ...song, platform: "netease" });
+      this.queue.add({ ...song, platform: provider.platform });
     }
     this.queue.setMode(PlayMode.Random);
     this.isFmMode = true;
+    this.fmProvider = provider;
     this.player.resetFailures();
 
     const first = this.queue.play();
     if (first) await this.resolveAndPlay(first);
     this.emit("stateChange");
-    return `Personal FM started: ${first?.name ?? "unknown"} - ${first?.artist ?? ""}`;
+    const label = provider.platform === "qq" ? "QQ Radar FM" : "Personal FM";
+    return `${label} started: ${first?.name ?? "unknown"} - ${first?.artist ?? ""}`;
   }
 
   private async cmdArtist(cmd: ParsedCommand): Promise<string> {
@@ -712,7 +730,7 @@ export class BotInstance extends EventEmitter {
     }
 
     this.queue.clear();
-    this.isFmMode = false;
+    this.disableFmMode();
     for (const song of filtered) {
       this.queue.add({ ...song, platform: provider.platform });
     }
@@ -726,14 +744,15 @@ export class BotInstance extends EventEmitter {
   }
 
   private async refillFm(): Promise<void> {
-    if (!this.isFmMode || !this.neteaseProvider.getPersonalFm) return;
+    const provider = this.fmProvider;
+    if (!this.isFmMode || !provider?.getPersonalFm) return;
     try {
-      const songs = await this.neteaseProvider.getPersonalFm();
+      const songs = await provider.getPersonalFm();
       if (songs.length === 0) return;
       for (const song of songs) {
-        this.queue.add({ ...song, platform: "netease" });
+        this.queue.add({ ...song, platform: provider.platform });
       }
-      this.logger.debug({ count: songs.length }, "FM queue refilled");
+      this.logger.debug({ count: songs.length, platform: provider.platform }, "FM queue refilled");
     } catch (err) {
       this.logger.error({ err }, "Failed to refill FM queue");
     }

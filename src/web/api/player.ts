@@ -87,6 +87,22 @@ export function createPlayerRouter(
   router.post("/:botId/stop", simpleCommand("!stop"));
   router.post("/:botId/clear", simpleCommand("!clear"));
 
+  router.post("/:botId/fm", async (req, res) => {
+    try {
+      const bot = (req as any).bot;
+      const { platform } = req.body;
+      const provider = bot.getProviderFor(
+        platform === "bilibili" || platform === "qq" || platform === "youtube"
+          ? platform
+          : "netease"
+      );
+      const message = await bot.startFm(provider);
+      res.json({ ok: !message.startsWith("No FM songs") && !message.includes("not available"), message });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   router.post("/:botId/volume", async (req, res) => {
     try {
       const bot = (req as any).bot;
