@@ -22,8 +22,9 @@
         <button class="scope-exit-btn" @click="exitScope" title="退出专属模式">退出</button>
       </div>
 
-      <!-- Normal: full selector with switching (shown when at least one bot exists) -->
-      <div v-else-if="store.bots.length > 0" class="bot-selector" ref="selectorRef">
+      <!-- Normal: full selector with switching (shown when at least one
+           controllable bot exists — scope ∩ permission via displayedBots) -->
+      <div v-else-if="displayedBots.length > 0" class="bot-selector" ref="selectorRef">
         <button class="bot-selector-btn" @click="dropdownOpen = !dropdownOpen">
           <span class="bot-dot" :class="{ online: activeBot?.connected }" />
           <span class="bot-selector-name">{{ activeBot?.name ?? '选择机器人' }}</span>
@@ -143,17 +144,26 @@ import { useSession } from '../composables/useSession.js';
 
 const store = usePlayerStore();
 const session = useSession();
+const { canControlBot } = session;
 const navRouter = useRouter();
 
 async function onLogout() {
   await session.logout();
   navRouter.replace({ name: 'login' });
 }
+// Belt-and-suspenders: the backend already scopes store.bots to the allowed
+// set for members, but filtering here keeps the UI correct if an admin (who
+// sees all bots) is constrained, or if the list ever isn't pre-filtered.
+const controllableBots = computed(() => store.bots.filter((b) => canControlBot(b.id)));
 const activeBot = computed(() => store.activeBot);
-// While scoped (dedicated link), the selector is locked to the single scoped
-// bot; otherwise the full list is shown and switching is allowed.
+// The bots shown in the selector are the INTERSECTION of the permission
+// allow-list (controllableBots) and the dedicated-link scope: while scoped the
+// selector is locked to the single scoped bot, otherwise the full controllable
+// list is shown and switching is allowed.
 const displayedBots = computed(() =>
-  store.isScoped ? store.bots.filter((b) => b.id === store.scopedBotId) : store.bots,
+  store.isScoped
+    ? controllableBots.value.filter((b) => b.id === store.scopedBotId)
+    : controllableBots.value,
 );
 const dropdownOpen = ref(false);
 const selectorRef = ref<HTMLElement | null>(null);

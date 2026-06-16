@@ -6,7 +6,8 @@ export type AuditAction =
   | "user.deleted"
   | "user.password_reset"
   | "user.password_changed"
-  | "user.role_changed";
+  | "user.role_changed"
+  | "user.permissions_changed";
 
 export interface AuditEntry {
   id: number;

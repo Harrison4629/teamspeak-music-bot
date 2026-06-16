@@ -7,6 +7,7 @@ import { createDatabase, type BotDatabase } from "../../data/database.js";
 import { createUserStore, type UserStore } from "../../data/users.js";
 import { createSessionStore, type SessionStore } from "../../data/sessions.js";
 import { createAuditStore } from "../../data/audit.js";
+import { createPermissionStore } from "../../data/permissions.js";
 import { createSessionRouter } from "./session.js";
 import { SESSION_COOKIE_NAME } from "../auth/validateSession.js";
 
@@ -15,7 +16,8 @@ function makeApp(botDb: BotDatabase, users: UserStore, sessions: SessionStore) {
   app.use(express.json());
   app.use(cookieParser());
   const audit = createAuditStore(botDb.db);
-  app.use("/api/session", createSessionRouter(users, sessions, audit, pino({ level: "silent" })));
+  const permissions = createPermissionStore(botDb.db);
+  app.use("/api/session", createSessionRouter(users, sessions, audit, pino({ level: "silent" }), permissions));
   return app;
 }
 
@@ -100,6 +102,12 @@ describe("session router", () => {
     const me = await request(app).get("/api/session/me").set("Cookie", cookie);
     expect(me.status).toBe(200);
     expect(me.body.username).toBe("alice");
+    // alice is the first user (an admin), so /me exposes all capabilities and full bot access.
+    expect(Array.isArray(me.body.capabilities)).toBe(true);
+    expect(me.body.capabilities).toEqual(
+      expect.arrayContaining(["player.control", "player.queue", "bot.manage", "platform.auth", "quality"])
+    );
+    expect(me.body.bots).toBe("all");
 
     const anon = await request(app).get("/api/session/me");
     expect(anon.status).toBe(401);

@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { CAPABILITIES, BOTS_ALL } from "./permissions.js";
 
 export interface PlayHistoryEntry {
   botId: string;
@@ -194,7 +195,45 @@ function initTables(db: Database.Database): void {
       UNIQUE(userId, platform, playlistId)
     );
     CREATE INDEX IF NOT EXISTS idx_favorites_userId ON favorite_playlists(userId);
+
+    CREATE TABLE IF NOT EXISTS user_permissions (
+      userId     TEXT NOT NULL,
+      permission TEXT NOT NULL,
+      PRIMARY KEY (userId, permission),
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS user_bot_access (
+      userId TEXT NOT NULL,
+      botId  TEXT NOT NULL,
+      PRIMARY KEY (userId, botId),
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_bot_access_userId ON user_bot_access(userId);
   `);
+}
+
+/**
+ * One-time backfill: existing `member` users created before the
+ * account-permissions feature are granted full access (all 5 capabilities +
+ * the `bots.all` marker), exactly once per database. Admins are skipped (they
+ * bypass permission checks). New members created after this runs are not
+ * affected — they get the basic tier via POST /api/users. A marker row in
+ * `schema_meta` makes this idempotent.
+ */
+export function backfillMemberPermissions(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)`);
+  const done = db.prepare("SELECT value FROM schema_meta WHERE key = 'perm_backfill_done'").get();
+  if (done) return;
+  const members = db.prepare("SELECT id FROM users WHERE role = 'member'").all() as { id: string }[];
+  const insCap = db.prepare("INSERT OR IGNORE INTO user_permissions (userId, permission) VALUES (?, ?)");
+  const tokens = [...CAPABILITIES, BOTS_ALL];
+  const tx = db.transaction(() => {
+    for (const m of members) {
+      for (const t of tokens) insCap.run(m.id, t);
+    }
+    db.prepare("INSERT INTO schema_meta (key, value) VALUES ('perm_backfill_done', ?)").run(String(members.length));
+  });
+  tx();
 }
 
 export function createDatabase(dbPath: string): BotDatabase {
@@ -203,6 +242,7 @@ export function createDatabase(dbPath: string): BotDatabase {
   db.pragma("foreign_keys = ON");
   initTables(db);
   migrateSchema(db);
+  backfillMemberPermissions(db);
 
   const insertHistory = db.prepare(`
     INSERT INTO play_history (botId, songId, songName, artist, album, platform, coverUrl)

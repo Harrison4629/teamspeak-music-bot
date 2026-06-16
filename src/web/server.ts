@@ -22,6 +22,7 @@ import { createFavoritesRouter } from "./api/favorites.js";
 import { setupWebSocket } from "./websocket.js";
 import { createUserStore } from "../data/users.js";
 import { createSessionStore } from "../data/sessions.js";
+import { createPermissionStore } from "../data/permissions.js";
 import { createRequireAuth } from "./middleware/requireAuth.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { csrfOriginCheck } from "./middleware/csrf.js";
@@ -74,6 +75,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
   const users = createUserStore(options.database.db);
   const sessions = createSessionStore(options.database.db);
   const audit = createAuditStore(options.database.db);
+  const permissions = createPermissionStore(options.database.db);
 
   // ─── Public routes (no auth, no CSRF) ───────────────────────────────────
   app.get("/api/health", (_req, res) => {
@@ -93,10 +95,10 @@ export function createWebServer(options: WebServerOptions): WebServer {
   app.use("/api/session/login", loginLimit);
   app.use("/api/session/setup", setupLimit);
 
-  app.use("/api/session", createSessionRouter(users, sessions, audit, logger));
+  app.use("/api/session", createSessionRouter(users, sessions, audit, logger, permissions));
 
   // ─── Gates for everything else under /api ───────────────────────────────
-  const requireAuth = createRequireAuth(sessions);
+  const requireAuth = createRequireAuth(sessions, permissions);
   app.use("/api", csrfOriginCheck);
   app.use("/api", requireAuth);
 
@@ -127,7 +129,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
   app.use("/api/favorites", createFavoritesRouter(options.database, logger));
 
   // admin-only routes
-  app.use("/api/users", requireAdmin, createUsersRouter(users, sessions, audit, logger));
+  app.use("/api/users", requireAdmin, createUsersRouter(users, sessions, audit, logger, permissions));
   app.use("/api/audit", requireAdmin, createAuditRouter(audit));
 
   // ─── Static SPA (public) ────────────────────────────────────────────────

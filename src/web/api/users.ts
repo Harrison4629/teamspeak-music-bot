@@ -4,6 +4,7 @@ import type { UserStore } from "../../data/users.js";
 import { UsernameTakenError } from "../../data/users.js";
 import type { SessionStore } from "../../data/sessions.js";
 import type { AuditStore } from "../../data/audit.js";
+import { isCapability, BASIC_TIER_CAPABILITIES, type PermissionStore } from "../../data/permissions.js";
 import { extractSessionToken } from "../auth/validateSession.js";
 
 function isValidUsername(v: unknown): v is string {
@@ -18,7 +19,8 @@ export function createUsersRouter(
   users: UserStore,
   sessions: SessionStore,
   audit: AuditStore,
-  logger: Logger
+  logger: Logger,
+  permissions: PermissionStore
 ): Router {
   const router = Router();
 
@@ -35,6 +37,9 @@ export function createUsersRouter(
     const role: "admin" | "member" = roleInput === "admin" ? "admin" : "member";
     try {
       const u = await users.createUser(username, password, role);
+      if (u.role === "member") {
+        permissions.setPermissions(u.id, { capabilities: BASIC_TIER_CAPABILITIES, bots: "all" });
+      }
       try {
         audit.record({
           actorId: req.user!.id, actorUsername: req.user!.username,
@@ -160,6 +165,44 @@ export function createUsersRouter(
       logger.info({ actorId: req.user!.id, targetId, newRole }, "User role changed");
     }
     res.status(204).end();
+  });
+
+  router.get("/:id/permissions", (req, res) => {
+    const user = users.findById(req.params.id);
+    if (!user) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({
+      capabilities: permissions.getCapabilities(user.id),
+      bots: permissions.getBotAccess(user.id),
+    });
+  });
+
+  router.put("/:id/permissions", (req, res) => {
+    const user = users.findById(req.params.id);
+    if (!user) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const body = req.body ?? {};
+    const caps: string[] = Array.isArray(body.capabilities)
+      ? body.capabilities.filter(isCapability)
+      : [];
+    const bots: "all" | string[] =
+      body.bots === "all" ? "all" : Array.isArray(body.bots) ? body.bots.map(String) : [];
+    permissions.setPermissions(user.id, { capabilities: caps, bots });
+    try {
+      audit.record({
+        actorId: req.user!.id, actorUsername: req.user!.username,
+        targetUserId: user.id, targetUsername: user.username,
+        action: "user.permissions_changed",
+      });
+    } catch (auditErr) {
+      logger.warn({ err: auditErr, action: "user.permissions_changed" }, "audit insert failed");
+    }
+    logger.info({ actorId: req.user!.id, targetUserId: user.id }, "User permissions changed");
+    res.json({ success: true });
   });
 
   return router;

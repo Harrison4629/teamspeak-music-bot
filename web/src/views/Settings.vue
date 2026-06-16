@@ -50,8 +50,8 @@
       <p v-if="ownPwSuccess" class="user-success">{{ ownPwSuccess }}</p>
     </section>
 
-    <!-- Bot Management -->
-    <section class="settings-section">
+    <!-- Bot Management (create/edit/delete/start-stop) requires bot.manage -->
+    <section v-if="can('bot.manage')" class="settings-section">
       <h2 class="section-title">机器人管理</h2>
       <div class="bot-list">
         <div v-for="bot in store.bots" :key="bot.id" class="bot-item">
@@ -157,8 +157,8 @@
       </div>
     </section>
 
-    <!-- Music Account - QR Code Login -->
-    <section class="settings-section">
+    <!-- Music Account - QR Code Login (platform auth) requires platform.auth -->
+    <section v-if="can('platform.auth')" class="settings-section">
       <h2 class="section-title">音乐账号</h2>
 
       <!-- NetEase -->
@@ -371,8 +371,8 @@
       </div>
     </section>
 
-    <!-- Audio Quality -->
-    <section class="settings-section">
+    <!-- Audio Quality requires quality -->
+    <section v-if="can('quality')" class="settings-section">
       <h2 class="section-title">音质设置</h2>
       <div class="setting-row">
         <div class="setting-label">
@@ -410,7 +410,7 @@
     </section>
     
     <!-- Idle Timeout -->
-    <section class="settings-section">
+    <section v-if="can('bot.manage')" class="settings-section">
       <h2 class="section-title">行为设置</h2>
       <div class="setting-row">
         <div class="setting-label">
@@ -448,7 +448,7 @@
     </section>
 
     <!-- Bot Profile (TeamSpeak Behavior) -->
-    <section class="settings-section">
+    <section v-if="can('bot.manage')" class="settings-section">
       <h2 class="section-title">机器人 Profile（TeamSpeak 行为）</h2>
       <p class="profile-section-hint">控制 bot 在 TeamSpeak 上自动同步歌曲信息的方式。⚠️ 标记的项会触发频道里所有人的提示音。</p>
       <div v-if="store.bots.length === 0" class="empty-hint">还没有机器人，先在上面创建一个。</div>
@@ -504,38 +504,96 @@
     <section v-if="session.isAdmin.value" class="settings-section">
       <h2 class="section-title">用户管理</h2>
       <div class="user-list">
-        <div v-for="u in userList" :key="u.id" class="user-item">
-          <div class="user-info">
-            <div class="user-name">
-              {{ u.username }}
-              <span class="user-role-badge" :class="`role-${u.role}`">
-                {{ u.role === 'admin' ? '管理员' : '成员' }}
-              </span>
-              <span v-if="session.currentUser.value && u.id === session.currentUser.value.id" class="user-self-badge">本人</span>
+        <div v-for="u in userList" :key="u.id" class="user-row-wrap">
+          <div class="user-item">
+            <div class="user-info">
+              <div class="user-name">
+                {{ u.username }}
+                <span class="user-role-badge" :class="`role-${u.role}`">
+                  {{ u.role === 'admin' ? '管理员' : '成员' }}
+                </span>
+                <span v-if="session.currentUser.value && u.id === session.currentUser.value.id" class="user-self-badge">本人</span>
+              </div>
+              <div class="user-created">创建于 {{ formatDate(u.createdAt) }}</div>
             </div>
-            <div class="user-created">创建于 {{ formatDate(u.createdAt) }}</div>
+            <div class="user-actions">
+              <span v-if="u.role === 'admin'" class="perm-admin-label">全部权限（管理员）</span>
+              <button
+                v-else
+                class="btn-sm"
+                :class="{ 'btn-primary': permEditingId === u.id }"
+                @click="onTogglePermEditor(u)"
+              >
+                <Icon icon="mdi:shield-key" /> 权限
+              </button>
+              <button class="btn-sm" @click="openResetPassword(u)">
+                <Icon icon="mdi:lock-reset" /> 重置密码
+              </button>
+              <button
+                class="btn-sm"
+                :disabled="changingRoleId === u.id || isLastAdmin(u)"
+                :title="isLastAdmin(u) ? '不能降级唯一的管理员' : (u.role === 'admin' ? '降级为成员' : '提升为管理员')"
+                @click="onToggleRole(u)"
+              >
+                <Icon icon="mdi:account-cog" />
+                {{ u.role === 'admin' ? '降为成员' : '提升管理员' }}
+              </button>
+              <button
+                class="btn-sm btn-delete"
+                :disabled="!!(session.currentUser.value && u.id === session.currentUser.value.id) || isLastAdmin(u)"
+                :title="session.currentUser.value && u.id === session.currentUser.value.id ? '不能删除自己' : (isLastAdmin(u) ? '不能删除唯一的管理员' : '')"
+                @click="onDeleteUser(u)"
+              >
+                <Icon icon="mdi:delete" />
+              </button>
+            </div>
           </div>
-          <div class="user-actions">
-            <button class="btn-sm" @click="openResetPassword(u)">
-              <Icon icon="mdi:lock-reset" /> 重置密码
-            </button>
-            <button
-              class="btn-sm"
-              :disabled="changingRoleId === u.id || isLastAdmin(u)"
-              :title="isLastAdmin(u) ? '不能降级唯一的管理员' : (u.role === 'admin' ? '降级为成员' : '提升为管理员')"
-              @click="onToggleRole(u)"
-            >
-              <Icon icon="mdi:account-cog" />
-              {{ u.role === 'admin' ? '降为成员' : '提升管理员' }}
-            </button>
-            <button
-              class="btn-sm btn-delete"
-              :disabled="!!(session.currentUser.value && u.id === session.currentUser.value.id) || isLastAdmin(u)"
-              :title="session.currentUser.value && u.id === session.currentUser.value.id ? '不能删除自己' : (isLastAdmin(u) ? '不能删除唯一的管理员' : '')"
-              @click="onDeleteUser(u)"
-            >
-              <Icon icon="mdi:delete" />
-            </button>
+
+          <!-- Inline permission editor (members only) -->
+          <div v-if="permEditingId === u.id" class="perm-editor">
+            <div v-if="permLoading" class="user-empty">加载权限中…</div>
+            <template v-else>
+              <div class="perm-group">
+                <div class="perm-group-title">能力</div>
+                <div class="perm-checks">
+                  <label v-for="cap in CAPABILITIES" :key="cap.token" class="perm-check">
+                    <input
+                      type="checkbox"
+                      :checked="permDraft.capabilities.includes(cap.token)"
+                      @change="toggleCapability(cap.token, ($event.target as HTMLInputElement).checked)"
+                    />
+                    {{ cap.label }}
+                  </label>
+                </div>
+              </div>
+
+              <div class="perm-group">
+                <div class="perm-group-title">机器人</div>
+                <label class="perm-check">
+                  <input type="checkbox" v-model="permDraft.botsAll" />
+                  全部机器人
+                </label>
+                <div v-if="!permDraft.botsAll" class="perm-checks perm-bots">
+                  <label v-for="bot in store.bots" :key="bot.id" class="perm-check">
+                    <input
+                      type="checkbox"
+                      :checked="permDraft.selectedBotIds.includes(bot.id)"
+                      @change="toggleBotSelection(bot.id, ($event.target as HTMLInputElement).checked)"
+                    />
+                    {{ bot.name }}
+                  </label>
+                  <span v-if="store.bots.length === 0" class="user-empty">还没有机器人。</span>
+                </div>
+              </div>
+
+              <p v-if="permError" class="user-error">{{ permError }}</p>
+              <div class="form-actions">
+                <button class="btn-sm" @click="permEditingId = null">取消</button>
+                <button class="btn-sm btn-primary" :disabled="permSaving" @click="onSavePermissions(u)">
+                  {{ permSaving ? '保存中…' : '保存' }}
+                </button>
+              </div>
+            </template>
           </div>
         </div>
         <div v-if="userList.length === 0 && !userLoadError" class="user-empty">加载中…</div>
@@ -987,6 +1045,7 @@ async function updateProfile(botId: string, key: keyof ProfileConfig, value: boo
 
 // --- User Management ---
 const session = useSession();
+const { can } = session;
 
 // --- Own password change (available to all authenticated users) ---
 const ownPw = reactive({ old: '', new: '', confirm: '' });
@@ -1152,6 +1211,91 @@ async function onConfirmReset() {
   }
 }
 
+// --- Per-user permission editor (members only) ---
+const CAPABILITIES: { token: string; label: string }[] = [
+  { token: 'player.control', label: '播放控制' },
+  { token: 'player.queue', label: '队列管理' },
+  { token: 'bot.manage', label: '机器人管理' },
+  { token: 'platform.auth', label: '平台登录凭据' },
+  { token: 'quality', label: '音质设置' },
+];
+
+const permEditingId = ref<string | null>(null);
+const permLoading = ref(false);
+const permSaving = ref(false);
+const permError = ref('');
+const permDraft = reactive<{ capabilities: string[]; botsAll: boolean; selectedBotIds: string[] }>({
+  capabilities: [],
+  botsAll: true,
+  selectedBotIds: [],
+});
+
+async function onTogglePermEditor(u: UserListEntry) {
+  if (permEditingId.value === u.id) {
+    permEditingId.value = null;
+    return;
+  }
+  permEditingId.value = u.id;
+  permError.value = '';
+  permLoading.value = true;
+  permDraft.capabilities = [];
+  permDraft.botsAll = true;
+  permDraft.selectedBotIds = [];
+  try {
+    const res = await fetch(`/api/users/${u.id}/permissions`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    permDraft.capabilities = Array.isArray(body.capabilities) ? [...body.capabilities] : [];
+    if (body.bots === 'all') {
+      permDraft.botsAll = true;
+      permDraft.selectedBotIds = [];
+    } else {
+      permDraft.botsAll = false;
+      permDraft.selectedBotIds = Array.isArray(body.bots) ? [...body.bots] : [];
+    }
+  } catch (e) {
+    permError.value = (e as Error).message;
+  } finally {
+    permLoading.value = false;
+  }
+}
+
+function toggleCapability(token: string, checked: boolean) {
+  const has = permDraft.capabilities.includes(token);
+  if (checked && !has) permDraft.capabilities.push(token);
+  else if (!checked && has) permDraft.capabilities = permDraft.capabilities.filter((t) => t !== token);
+}
+
+function toggleBotSelection(id: string, checked: boolean) {
+  const has = permDraft.selectedBotIds.includes(id);
+  if (checked && !has) permDraft.selectedBotIds.push(id);
+  else if (!checked && has) permDraft.selectedBotIds = permDraft.selectedBotIds.filter((b) => b !== id);
+}
+
+async function onSavePermissions(u: UserListEntry) {
+  permSaving.value = true;
+  permError.value = '';
+  try {
+    const res = await fetch(`/api/users/${u.id}/permissions`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilities: [...permDraft.capabilities],
+        bots: permDraft.botsAll ? 'all' : [...permDraft.selectedBotIds],
+      }),
+    });
+    if (!res.ok && res.status !== 204) {
+      const b = await res.json().catch(() => ({}));
+      throw new Error(b.error ?? `HTTP ${res.status}`);
+    }
+    permEditingId.value = null;
+  } catch (e) {
+    permError.value = (e as Error).message;
+  } finally {
+    permSaving.value = false;
+  }
+}
+
 function formatDate(ms: number): string {
   const d = new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1202,6 +1346,7 @@ function describeAction(e: AuditEntry): string {
     case 'user.password_reset':     return `重置 ${target} 的密码`;
     case 'user.password_changed':   return `修改自己的密码`;
     case 'user.role_changed':       return `变更 ${target} 的角色`;
+    case 'user.permissions_changed': return `权限变更 → ${target}`;
     default:                        return `${e.action} → ${target}`;
   }
 }
@@ -1929,6 +2074,28 @@ onUnmounted(() => {
 .role-admin { background: rgba(99, 145, 226, 0.18); color: #6391e2; }
 .role-member { background: rgba(150, 150, 150, 0.18); color: var(--text-secondary); }
 .user-role-select { flex: 0 0 110px; }
+
+.user-row-wrap { display: flex; flex-direction: column; gap: 0; }
+.perm-admin-label { font-size: 12px; color: var(--text-secondary); align-self: center; }
+.perm-editor {
+  margin-top: -2px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.perm-group { display: flex; flex-direction: column; gap: 8px; }
+.perm-group-title { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.perm-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.perm-bots { padding-left: 16px; }
+.perm-check {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--text-secondary); cursor: pointer;
+}
+.perm-check input { cursor: pointer; }
 
 // --- Account section (own password change) ---
 .account-info-card {

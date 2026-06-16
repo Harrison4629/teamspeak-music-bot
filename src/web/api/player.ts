@@ -4,6 +4,7 @@ import type { BotDatabase } from "../../data/database.js";
 import type { MusicProvider } from "../../music/provider.js";
 import type { Logger } from "../../logger.js";
 import { parseCommand } from "../../bot/commands.js";
+import { requirePermission, requireBotAccess } from "../middleware/requirePermission.js";
 
 export function createPlayerRouter(
   botManager: BotManager,
@@ -14,6 +15,13 @@ export function createPlayerRouter(
   bilibiliProvider?: MusicProvider,
 ): Router {
   const router = Router();
+
+  // Access check runs BEFORE the existence/resolver check so a member who is
+  // not allowed a bot always gets a uniform 403 — whether or not the bot
+  // exists — instead of a 404 that would leak which bot IDs are real.
+  // requireBotAccess only needs req.params.botId and req.user (set by the
+  // global requireAuth mounted earlier), so it works before the resolver.
+  router.use("/:botId", requireBotAccess("botId"));
 
   router.use("/:botId", (req, res, next) => {
     const bot = botManager.getBot(req.params.botId);
@@ -33,7 +41,7 @@ export function createPlayerRouter(
     return "";
   };
 
-  router.post("/:botId/play", async (req, res) => {
+  router.post("/:botId/play", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { query, platform } = req.body;
@@ -53,7 +61,7 @@ export function createPlayerRouter(
     }
   });
 
-  router.post("/:botId/add", async (req, res) => {
+  router.post("/:botId/add", requirePermission("player.queue"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { query, platform } = req.body;
@@ -80,14 +88,14 @@ export function createPlayerRouter(
     }
   };
 
-  router.post("/:botId/pause", simpleCommand("!pause"));
-  router.post("/:botId/resume", simpleCommand("!resume"));
-  router.post("/:botId/next", simpleCommand("!next"));
-  router.post("/:botId/prev", simpleCommand("!prev"));
-  router.post("/:botId/stop", simpleCommand("!stop"));
-  router.post("/:botId/clear", simpleCommand("!clear"));
+  router.post("/:botId/pause", requirePermission("player.control"), simpleCommand("!pause"));
+  router.post("/:botId/resume", requirePermission("player.control"), simpleCommand("!resume"));
+  router.post("/:botId/next", requirePermission("player.control"), simpleCommand("!next"));
+  router.post("/:botId/prev", requirePermission("player.control"), simpleCommand("!prev"));
+  router.post("/:botId/stop", requirePermission("player.control"), simpleCommand("!stop"));
+  router.post("/:botId/clear", requirePermission("player.queue"), simpleCommand("!clear"));
 
-  router.post("/:botId/fm", async (req, res) => {
+  router.post("/:botId/fm", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { platform } = req.body;
@@ -109,7 +117,7 @@ export function createPlayerRouter(
     }
   });
 
-  router.post("/:botId/volume", async (req, res) => {
+  router.post("/:botId/volume", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { volume } = req.body;
@@ -137,7 +145,7 @@ export function createPlayerRouter(
 
   const VALID_MODES = new Set(["seq", "loop", "random", "rloop"]);
 
-  router.post("/:botId/mode", async (req, res) => {
+  router.post("/:botId/mode", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { mode } = req.body;
@@ -162,7 +170,7 @@ export function createPlayerRouter(
   });
 
   // Seek to position
-  router.post("/:botId/seek", async (req, res) => {
+  router.post("/:botId/seek", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { position } = req.body; // seconds
@@ -186,7 +194,7 @@ export function createPlayerRouter(
     res.json({ queue: bot.getQueue(), status: bot.getStatus() });
   });
 
-  router.delete("/:botId/queue/:index", async (req, res) => {
+  router.delete("/:botId/queue/:index", requirePermission("player.queue"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const cmd = parseCommand(`!remove ${req.params.index}`, "!")!;
@@ -198,7 +206,7 @@ export function createPlayerRouter(
   });
 
   // Jump to a specific index in the queue (without clearing it)
-  router.post("/:botId/play-at", async (req, res) => {
+  router.post("/:botId/play-at", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { index } = req.body;
@@ -232,7 +240,7 @@ export function createPlayerRouter(
     }
   });
 
-  router.post("/:botId/playlist", async (req, res) => {
+  router.post("/:botId/playlist", requirePermission("player.queue"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { playlistId, platform } = req.body;
@@ -249,7 +257,7 @@ export function createPlayerRouter(
 
   // Play a playlist by ID — stores metadata only, resolves URL for first song
   // Respects current play mode (random = pick random first song)
-  router.post("/:botId/play-playlist", async (req, res) => {
+  router.post("/:botId/play-playlist", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { playlistId, platform } = req.body;
@@ -336,7 +344,7 @@ export function createPlayerRouter(
   });
 
   // Play an album by ID — mirrors play-playlist but calls getAlbumSongs
-  router.post("/:botId/play-album", async (req, res) => {
+  router.post("/:botId/play-album", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { albumId, platform } = req.body;
@@ -408,7 +416,7 @@ export function createPlayerRouter(
   });
 
   // Play a single song by ID — resolves URL on demand
-  router.post("/:botId/play-song", async (req, res) => {
+  router.post("/:botId/play-song", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { song } = req.body;
@@ -436,7 +444,7 @@ export function createPlayerRouter(
 
   // Insert a single song to play right after the current one.
   // If nothing is playing, behaves like /play-song (start immediately).
-  router.post("/:botId/play-next-song", async (req, res) => {
+  router.post("/:botId/play-next-song", requirePermission("player.control"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { song } = req.body;
@@ -474,7 +482,7 @@ export function createPlayerRouter(
     }
   });
 
-  router.post("/:botId/add-song", async (req, res) => {
+  router.post("/:botId/add-song", requirePermission("player.queue"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { song } = req.body;
@@ -502,7 +510,7 @@ export function createPlayerRouter(
   });
 
   // Add a song to queue by ID — metadata only
-  router.post("/:botId/add-by-id", async (req, res) => {
+  router.post("/:botId/add-by-id", requirePermission("player.queue"), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { songId, platform } = req.body;
@@ -540,7 +548,7 @@ export function createPlayerRouter(
     res.json(bot.getProfileManager().getConfig());
   });
 
-  router.put("/:botId/profile", (req, res) => {
+  router.put("/:botId/profile", requirePermission("bot.manage"), (req, res) => {
     try {
       const bot = (req as any).bot;
       const pm = bot.getProfileManager();

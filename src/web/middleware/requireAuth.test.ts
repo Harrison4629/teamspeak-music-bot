@@ -5,6 +5,7 @@ import request from "supertest";
 import { createDatabase, type BotDatabase } from "../../data/database.js";
 import { createUserStore } from "../../data/users.js";
 import { createSessionStore } from "../../data/sessions.js";
+import { createPermissionStore } from "../../data/permissions.js";
 import { createRequireAuth } from "./requireAuth.js";
 import { SESSION_COOKIE_NAME } from "../auth/validateSession.js";
 
@@ -17,12 +18,13 @@ describe("requireAuth middleware", () => {
     botDb = createDatabase(":memory:");
     const users = createUserStore(botDb.db);
     const sessions = createSessionStore(botDb.db);
+    const permissions = createPermissionStore(botDb.db);
     const u = await users.createUser("alice", "pw-alice", "admin");
     validToken = sessions.createSession(u.id).token;
 
     app = express();
     app.use(cookieParser());
-    app.use(createRequireAuth(sessions));
+    app.use(createRequireAuth(sessions, permissions));
     app.get("/protected", (req, res) => {
       res.json({ ok: true, user: (req as any).user });
     });

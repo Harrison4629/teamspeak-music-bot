@@ -11,6 +11,7 @@ import { createUserStore } from "../../data/users.js";
 import { createSessionStore } from "../../data/sessions.js";
 import { createAvatarStore } from "../../data/avatars.js";
 import { createRequireAuth } from "../middleware/requireAuth.js";
+import { createPermissionStore } from "../../data/permissions.js";
 import { createBotRouter } from "./bot.js";
 import { getDefaultConfig, type BotConfig } from "../../data/config.js";
 import { SESSION_COOKIE_NAME } from "../auth/validateSession.js";
@@ -59,7 +60,7 @@ describe("bot router /settings", () => {
     app = express();
     app.use(express.json());
     app.use(cookieParser());
-    app.use("/api", createRequireAuth(sessions));
+    app.use("/api", createRequireAuth(sessions, createPermissionStore(botDb.db)));
     app.use(
       "/api/bot",
       createBotRouter(fakeManager, config, configPath, pino({ level: "silent" }), botDb, avatarStore),

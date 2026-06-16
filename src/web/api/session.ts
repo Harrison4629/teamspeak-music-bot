@@ -4,6 +4,7 @@ import type { Logger } from "../../logger.js";
 import type { UserStore } from "../../data/users.js";
 import type { SessionStore } from "../../data/sessions.js";
 import type { AuditStore } from "../../data/audit.js";
+import { resolvePermissionContext, type PermissionStore } from "../../data/permissions.js";
 import { SESSION_TTL_MS } from "../../data/sessions.js";
 import { SESSION_COOKIE_NAME, validateSessionFromHeaders, extractSessionToken } from "../auth/validateSession.js";
 
@@ -49,7 +50,8 @@ export function createSessionRouter(
   users: UserStore,
   sessions: SessionStore,
   audit: AuditStore,
-  logger: Logger
+  logger: Logger,
+  permissions: PermissionStore
 ): Router {
   const router = Router();
 
@@ -133,7 +135,15 @@ export function createSessionRouter(
   });
 
   router.get("/me", requireAuthInline, (req, res) => {
-    res.json(req.user);
+    const user = req.user!;
+    const ctx = resolvePermissionContext(user.role, user.id, permissions);
+    res.json({
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      capabilities: [...ctx.capabilities],
+      bots: ctx.bots === "all" ? "all" : [...ctx.bots],
+    });
   });
 
   router.post("/change-password", requireAuthInline, async (req, res) => {
