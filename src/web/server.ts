@@ -18,6 +18,7 @@ import { createSessionRouter } from "./api/session.js";
 import { createUsersRouter } from "./api/users.js";
 import { createAuditStore } from "../data/audit.js";
 import { createAuditRouter } from "./api/audit.js";
+import { createFavoritesRouter } from "./api/favorites.js";
 import { setupWebSocket } from "./websocket.js";
 import { createUserStore } from "../data/users.js";
 import { createSessionStore } from "../data/sessions.js";
@@ -123,6 +124,8 @@ export function createWebServer(options: WebServerOptions): WebServer {
     "/api/auth",
     createAuthRouter(options.neteaseProvider, options.qqProvider, options.bilibiliProvider, logger, options.cookieStore)
   );
+  app.use("/api/favorites", createFavoritesRouter(options.database, logger));
+
   // admin-only routes
   app.use("/api/users", requireAdmin, createUsersRouter(users, sessions, audit, logger));
   app.use("/api/audit", requireAdmin, createAuditRouter(audit));

@@ -35,6 +35,17 @@ export interface PlaylistItem {
   platform: string;
 }
 
+export interface FavoritePlaylist {
+  id: number;
+  userId: string;
+  platform: string;
+  playlistId: string;
+  name: string;
+  coverUrl: string;
+  songCount: number;
+  createdAt: string;
+}
+
 interface TimingState {
   serverElapsed: number;
   serverSyncTime: number;
@@ -67,6 +78,9 @@ export const usePlayerStore = defineStore('player', {
     bilibiliPopular: [] as Song[],
     authStatus: { netease: false, qq: false },
     lastFetchTime: 0,
+
+    // Favorited playlists (fetched from server, isolated per WebUI user)
+    favoritedPlaylists: [] as FavoritePlaylist[],
 
     // Transient notification for surfacing failures (e.g., "song not playable")
     // to a global Toast. Bumped `id` triggers re-render of the same message.
@@ -449,6 +463,31 @@ export const usePlayerStore = defineStore('player', {
       this.fetchQueue();
     },
 
+    async fetchFavorites() {
+      try {
+        const res = await axios.get('/api/favorites');
+        this.favoritedPlaylists = res.data.favorites ?? [];
+      } catch {
+        // not critical
+      }
+    },
+
+    async addFavorite(playlist: { platform: string; playlistId: string; name: string; coverUrl: string; songCount: number }) {
+      await axios.post('/api/favorites', playlist);
+      await this.fetchFavorites();
+      this.notify('已收藏', 'info');
+    },
+
+    async removeFavorite(id: number) {
+      await axios.delete(`/api/favorites/${id}`);
+      await this.fetchFavorites();
+      this.notify('已取消收藏', 'info');
+    },
+
+    isFavorited(playlistId: string, platform: string): boolean {
+      return this.favoritedPlaylists.some((f) => f.playlistId === playlistId && f.platform === platform);
+    },
+
     async fetchHomeData() {
       // Always check auth status first — if it changed since the cached
       // fetch (e.g., user logged in/out as a different account), the
@@ -536,6 +575,9 @@ export const usePlayerStore = defineStore('player', {
       if (authOk) {
         this.lastFetchTime = Date.now();
       }
+
+      // Fetch favorites in parallel — not cached by TTL; always fresh
+      this.fetchFavorites();
     },
   },
 });

@@ -51,6 +51,17 @@ export const DEFAULT_PROFILE_CONFIG: ProfileConfig = {
   nowPlayingMsgEnabled: true,
 };
 
+export interface FavoritePlaylist {
+  id: number;
+  userId: string;
+  platform: string;
+  playlistId: string;
+  name: string;
+  coverUrl: string;
+  songCount: number;
+  createdAt: string;
+}
+
 export interface BotDatabase {
   db: Database.Database;
   addPlayHistory(entry: PlayHistoryEntry): void;
@@ -62,6 +73,10 @@ export interface BotDatabase {
   saveProfileConfig(botId: string, config: ProfileConfig): void;
   getCustomAvatarPath(botId: string): string | null;
   setCustomAvatarPath(botId: string, path: string | null): void;
+  addFavorite(userId: string, playlist: { platform: string; playlistId: string; name: string; coverUrl: string; songCount: number }): void;
+  removeFavorite(userId: string, playlistId: string, platform: string): boolean;
+  getFavorites(userId: string): FavoritePlaylist[];
+  isFavorited(userId: string, playlistId: string, platform: string): boolean;
   close(): void;
 }
 
@@ -165,6 +180,20 @@ function initTables(db: Database.Database): void {
       action TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_user_audit_timestamp ON user_audit(timestamp DESC);
+
+    CREATE TABLE IF NOT EXISTS favorite_playlists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      playlistId TEXT NOT NULL,
+      name TEXT NOT NULL,
+      coverUrl TEXT NOT NULL DEFAULT '',
+      songCount INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(userId, platform, playlistId)
+    );
+    CREATE INDEX IF NOT EXISTS idx_favorites_userId ON favorite_playlists(userId);
   `);
 }
 
@@ -225,6 +254,24 @@ export function createDatabase(dbPath: string): BotDatabase {
 
   const selectCustomAvatar = db.prepare(`SELECT custom_avatar_path FROM bot_instances WHERE id = ?`);
   const updateCustomAvatar = db.prepare(`UPDATE bot_instances SET custom_avatar_path = ? WHERE id = ?`);
+
+  const insertFavorite = db.prepare(`
+    INSERT INTO favorite_playlists (userId, platform, playlistId, name, coverUrl, songCount)
+    VALUES (@userId, @platform, @playlistId, @name, @coverUrl, @songCount)
+  `);
+
+  const deleteFavorite = db.prepare(`
+    DELETE FROM favorite_playlists WHERE userId = ? AND playlistId = ? AND platform = ?
+  `);
+
+  const selectFavorites = db.prepare(`
+    SELECT id, userId, platform, playlistId, name, coverUrl, songCount, createdAt
+    FROM favorite_playlists WHERE userId = ? ORDER BY createdAt DESC
+  `);
+
+  const checkFavorited = db.prepare(`
+    SELECT 1 FROM favorite_playlists WHERE userId = ? AND playlistId = ? AND platform = ?
+  `);
 
   return {
     db,
@@ -295,6 +342,24 @@ export function createDatabase(dbPath: string): BotDatabase {
     },
     setCustomAvatarPath(botId, path) {
       updateCustomAvatar.run(path, botId);
+    },
+
+    addFavorite(userId, playlist) {
+      insertFavorite.run({ userId, ...playlist });
+    },
+
+    removeFavorite(userId, playlistId, platform) {
+      const result = deleteFavorite.run(userId, playlistId, platform);
+      return result.changes > 0;
+    },
+
+    getFavorites(userId) {
+      return selectFavorites.all(userId) as FavoritePlaylist[];
+    },
+
+    isFavorited(userId, playlistId, platform) {
+      const row = checkFavorited.get(userId, playlistId, platform);
+      return row !== undefined;
     },
 
     close() {
