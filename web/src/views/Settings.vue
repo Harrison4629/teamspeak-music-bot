@@ -442,7 +442,7 @@
           v-model="autoPauseOnEmpty"
           type="checkbox"
           class="profile-toggle-switch"
-          @change="saveIdleTimeout"
+          @change="saveAutoPause"
         />
       </label>
     </section>
@@ -909,10 +909,13 @@ async function loadIdleTimeout() {
 
 async function saveIdleTimeout() {
   try {
-    await axios.post('/api/bot/settings', {
-      idleTimeoutMinutes: idleTimeout.value,
-      autoPauseOnEmpty: autoPauseOnEmpty.value,
-    });
+    await axios.post('/api/bot/settings', { idleTimeoutMinutes: idleTimeout.value });
+  } catch { /* ignore */ }
+}
+
+async function saveAutoPause() {
+  try {
+    await axios.post('/api/bot/settings', { autoPauseOnEmpty: autoPauseOnEmpty.value });
   } catch { /* ignore */ }
 }
 
