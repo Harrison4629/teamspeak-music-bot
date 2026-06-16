@@ -31,8 +31,10 @@ export function parseSongRef(raw: string): SongRef | null {
   if (!q) return null;
 
   // Explicit "id:<id>" — platform decided by the command's flags/default.
+  // Strip trailing punctuation that tags along from a chat paste ("id:12345."
+  // / "id:12345)") — no supported id (numeric / BVID / mid) ends in those.
   const idPrefix = /^id:\s*(\S+)$/i.exec(q);
-  if (idPrefix) return { id: idPrefix[1], platform: null };
+  if (idPrefix) return { id: idPrefix[1].replace(/[.,;)\]]+$/, ""), platform: null };
 
   // BiliBili BV id, bare or inside a bilibili URL (NetEase ids are numeric, so
   // a "BV..." token never collides with them).
@@ -41,8 +43,11 @@ export function parseSongRef(raw: string): SongRef | null {
     return { id: bv[0], platform: "bilibili" };
   }
 
-  // NetEase song URL.
-  if (/music\.163\.com/i.test(q)) {
+  // NetEase song URL. Only treat `id=N` as a SONG id when the URL is not a
+  // collection page (playlist/album/artist/toplist/djradio) — those reuse the
+  // same `id=` param but are NOT songs; getSongDetail() would 404 them into a
+  // confusing "no song" error instead of falling back to a normal search.
+  if (/music\.163\.com/i.test(q) && !/(playlist|album|artist|toplist|djradio)/i.test(q)) {
     const m = /[?&#/]id=(\d+)/.exec(q) ?? /\/song\/(\d+)/.exec(q);
     if (m) return { id: m[1], platform: "netease" };
   }

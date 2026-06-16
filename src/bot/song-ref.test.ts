@@ -15,6 +15,23 @@ describe("parseSongRef (#90 exact-song selection)", () => {
     expect(parseSongRef("ID: 004Z8Ihr0JIu5s")).toEqual({ id: "004Z8Ihr0JIu5s", platform: null });
   });
 
+  it("strips trailing punctuation from a pasted id:", () => {
+    expect(parseSongRef("id:185868.")).toEqual({ id: "185868", platform: null });
+    expect(parseSongRef("id:185868)")).toEqual({ id: "185868", platform: null });
+    expect(parseSongRef("id:185868,")).toEqual({ id: "185868", platform: null });
+  });
+
+  it("does NOT treat NetEase collection (playlist/album/artist) URLs as a song id", () => {
+    // These reuse ?id= but are not songs — they should fall through to search,
+    // not misresolve to getSongDetail(collectionId) and error "no song".
+    expect(parseSongRef("https://music.163.com/playlist?id=123456")).toBeNull();
+    expect(parseSongRef("https://music.163.com/#/playlist?id=123456")).toBeNull();
+    expect(parseSongRef("https://music.163.com/album?id=123456")).toBeNull();
+    expect(parseSongRef("https://music.163.com/artist?id=185858")).toBeNull();
+    // A genuine song URL is still parsed.
+    expect(parseSongRef("https://music.163.com/song?id=185868")).toEqual({ id: "185868", platform: "netease" });
+  });
+
   it("parses NetEase song URLs", () => {
     expect(parseSongRef("https://music.163.com/song?id=185868")).toEqual({ id: "185868", platform: "netease" });
     expect(parseSongRef("https://music.163.com/#/song?id=185868&userid=1")).toEqual({ id: "185868", platform: "netease" });
