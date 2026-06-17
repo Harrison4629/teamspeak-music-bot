@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { decideOccupancyAction, occupancyFromClientList } from "./auto-pause.js";
+import {
+  decideOccupancyAction,
+  occupancyFromClientList,
+  shouldResumeOnReturn,
+} from "./auto-pause.js";
 
 describe("decideOccupancyAction", () => {
   it("pauses when empty while playing and enabled", () => {
@@ -43,5 +47,27 @@ describe("occupancyFromClientList", () => {
   });
   it("never yields a negative count (guards the -1 that caused false pauses)", () => {
     expect(occupancyFromClientList(-3)).toBeNull();
+  });
+});
+
+describe("shouldResumeOnReturn (event-driven auto-resume)", () => {
+  it("resumes when we auto-paused and are still paused", () => {
+    // The reported gap: someone returns after an auto-pause. clientlist can't
+    // confirm it (it times out while they're present), so we resume from the
+    // clientEnter event alone.
+    expect(shouldResumeOnReturn(true, "paused")).toBe(true);
+  });
+  it("does NOT resume a track the user paused by hand", () => {
+    expect(shouldResumeOnReturn(false, "paused")).toBe(false);
+  });
+  it("does nothing if already playing (e.g. the bot's own enter at connect)", () => {
+    // autoPaused is cleared to false on connect, so the bot's own clientEnter
+    // is a no-op; this also covers the playing/auto-paused-flag-stale case.
+    expect(shouldResumeOnReturn(false, "playing")).toBe(false);
+    expect(shouldResumeOnReturn(true, "playing")).toBe(false);
+  });
+  it("does nothing when idle (nothing to resume)", () => {
+    expect(shouldResumeOnReturn(true, "idle")).toBe(false);
+    expect(shouldResumeOnReturn(false, "idle")).toBe(false);
   });
 });

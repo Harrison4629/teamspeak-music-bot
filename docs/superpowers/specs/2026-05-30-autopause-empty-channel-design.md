@@ -99,3 +99,40 @@ track *we* auto-paused gets auto-resumed; a user-paused track stays paused when 
 - No per-bot toggle (global only). No change to idle-disconnect behavior. No new dependency.
 - Reaction relies on events the bot can already see (same-channel members are always in view);
   no extra channel subscription needed.
+
+---
+
+## Update (2026-06): occupancy is event-driven & server-wide, not channel-filtered
+
+Live testing against a real TS3 server (with `@honeybbq/teamspeak-client` 0.2.2)
+invalidated two assumptions above. Recording the corrected model here so nobody
+reintroduces the old design:
+
+- **Default is OFF**, not on. See `getDefaultConfig()` in `src/data/config.ts`
+  and the rationale comment there.
+- **Query commands are unusable when others are present.** `clientlist`,
+  `channellist`, and `channelclientlist` ALL time out (~5–10s) whenever ≥2
+  clients are connected to the **server** (verified even when the two clients
+  are in *different* channels). They succeed only when the bot is the sole
+  client on the whole server. So `getClientsInChannel()` returns `[]` exactly
+  when occupancy matters, and `occupancyFromClientList(0)` returns `null`
+  ("unknown") so callers skip the decision rather than mis-reading it as empty.
+- **PAUSE** therefore only ever fires when the bot becomes alone on the server
+  (the one state where the query works). This is reliable and stays on the
+  query path (`refreshOccupancy()` + the 30s idle poller).
+- **RESUME** is armed directly from the `clientEnter` push event
+  (`shouldResumeOnReturn()` + `_resumeIfReturning()` in `instance.ts`), NOT from
+  a query. Because the bot only auto-pauses while alone, the sole way occupancy
+  can return while `autoPaused` is set is a fresh connection — delivered as
+  `clientEnter`. The resume branch never pauses (userCount is always > 0).
+- **Net semantics:** "pause when the server is empty (bot alone), resume when
+  someone connects." Channel granularity is **impossible** with this library:
+  `clientEnter`'s channel field is always `0` (library reads notify param `cid`
+  but enter-view carries `ctid`), and `clientMoved` delivery is flaky. Do NOT
+  attempt to layer `clientMoved.targetChannelID` channel-accuracy on top — it is
+  systematically wrong for direct-connect clients and reintroduces unreliability.
+  The correct path to true channel scoping is an upstream library fix.
+- **Knock-on:** idle-disconnect shares the same signal and is likewise
+  server-wide. UI copy in `web/src/views/Settings.vue` was updated to say
+  "服务器" rather than "频道" to match. `cmdVote` was intentionally left on the
+  query path (out of scope; switching it would inherit the same timeout).

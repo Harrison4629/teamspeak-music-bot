@@ -18,7 +18,11 @@ import type { BotDatabase, ProfileConfig } from "../data/database.js";
 import type { BotConfig } from "../data/config.js";
 import { BotProfileManager } from "./profile.js";
 import type { AvatarStore } from "../data/avatars.js";
-import { decideOccupancyAction, occupancyFromClientList } from "./auto-pause.js";
+import {
+  decideOccupancyAction,
+  occupancyFromClientList,
+  shouldResumeOnReturn,
+} from "./auto-pause.js";
 
 export interface BotInstanceOptions {
   id: string;
@@ -166,9 +170,36 @@ export class BotInstance extends EventEmitter {
 
     // React near-instantly to channel membership changes. The 30s idle
     // poller remains the fallback if any of these events are missed.
-    this.tsClient.on("clientEnter", () => void this.refreshOccupancy());
+    //
+    // clientEnter additionally arms auto-RESUME directly from the event,
+    // because the occupancy query (clientlist) times out whenever another
+    // client is present — i.e. exactly when a listener returns — so it cannot
+    // be used to confirm the return. See _resumeIfReturning().
+    this.tsClient.on("clientEnter", () => {
+      this._resumeIfReturning();
+      void this.refreshOccupancy();
+    });
     this.tsClient.on("clientLeave", () => void this.refreshOccupancy());
     this.tsClient.on("clientMoved", () => void this.refreshOccupancy());
+  }
+
+  /**
+   * Resume playback when a listener returns after an auto-pause, driven by the
+   * clientEnter push event rather than a (timing-out) occupancy query.
+   *
+   * We only auto-pause while alone on the server, so `autoPaused` is a reliable
+   * "paused because empty" flag; any client appearing while it's set means a
+   * listener returned. Delegating to handleOccupancy(1) routes through
+   * decideOccupancyAction (resume iff autoPaused && paused) and also cancels the
+   * idle-disconnect timer. This path NEVER pauses — userCount is always > 0 —
+   * so a spurious or unrelated enter can only (harmlessly) resume, never stop
+   * playback. Pause remains exclusively on the authoritative clientlist path.
+   */
+  private _resumeIfReturning(): void {
+    if (!this.connected) return;
+    if (shouldResumeOnReturn(this.autoPaused, this.player.getState())) {
+      this.handleOccupancy(1);
+    }
   }
 
   private async refreshOccupancy(): Promise<void> {

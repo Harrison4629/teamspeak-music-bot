@@ -417,7 +417,7 @@
           <Icon icon="mdi:timer-off-outline" class="setting-icon" />
           <div>
             <div>闲置自动退出</div>
-            <div style="font-size:12px; opacity:0.6; margin-top:2px">频道无人时，机器人自动断开的等待时间（0 = 不退出）</div>
+            <div style="font-size:12px; opacity:0.6; margin-top:2px">服务器上没有其他人时，机器人自动断开的等待时间（0 = 不退出）</div>
           </div>
         </div>
         <div class="prefix-input-wrap">
@@ -435,8 +435,8 @@
       </div>
       <label class="profile-toggle behavior-toggle">
         <div class="profile-toggle-text">
-          <div class="profile-toggle-label">频道无人时自动暂停播放</div>
-          <div class="profile-toggle-hint">机器人所在频道没有其他人时自动暂停，有人加入后可继续播放</div>
+          <div class="profile-toggle-label">无人时自动暂停播放</div>
+          <div class="profile-toggle-hint">服务器上只剩机器人自己时自动暂停，有人连接后自动继续播放（受协议限制，占用判断以整个服务器为准，无法精确到单个频道）</div>
         </div>
         <input
           v-model="autoPauseOnEmpty"
@@ -955,13 +955,14 @@ async function savePrefix() {
 
 // Idle timeout
 const idleTimeout = ref(0);
-const autoPauseOnEmpty = ref(true);
+// Defaults OFF to match the backend default (config.ts getDefaultConfig).
+const autoPauseOnEmpty = ref(false);
 
 async function loadIdleTimeout() {
   try {
     const res = await axios.get('/api/bot/settings');
     idleTimeout.value = res.data.idleTimeoutMinutes ?? 0;
-    autoPauseOnEmpty.value = res.data.autoPauseOnEmpty ?? true;
+    autoPauseOnEmpty.value = res.data.autoPauseOnEmpty ?? false;
   } catch { /* ignore */ }
 }
 
