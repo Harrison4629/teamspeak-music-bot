@@ -73,10 +73,7 @@ export class TS3Client extends EventEmitter {
   private httpQuery: TS6HttpQuery | null = null;
   private udpErrorTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(
-    private options: TS3ClientOptions,
-    logger: Logger,
-  ) {
+  constructor(private options: TS3ClientOptions, logger: Logger) {
     super();
     this.logger = logger;
 
@@ -113,10 +110,7 @@ export class TS3Client extends EventEmitter {
     const addr = `${this.options.host}:${this.options.port}`;
 
     // Detect or use forced protocol
-    if (
-      this.options.serverProtocol &&
-      this.options.serverProtocol !== "unknown"
-    ) {
+    if (this.options.serverProtocol && this.options.serverProtocol !== "unknown") {
       this.detectedProtocol = this.options.serverProtocol;
       this.logger.info(
         { addr, protocol: this.detectedProtocol },
@@ -139,11 +133,7 @@ export class TS3Client extends EventEmitter {
         );
       } else {
         this.logger.info(
-          {
-            addr,
-            protocol: this.detectedProtocol,
-            queryPort: detection.queryPort,
-          },
+          { addr, protocol: this.detectedProtocol, queryPort: detection.queryPort },
           `Server protocol detected: ${this.detectedProtocol.toUpperCase()}`,
         );
       }
@@ -151,8 +141,7 @@ export class TS3Client extends EventEmitter {
 
     // Set up TS6 HTTP Query if applicable
     if (this.detectedProtocol === "ts6") {
-      const queryPort =
-        this.options.queryPort !== 10011 ? this.options.queryPort : 10080;
+      const queryPort = this.options.queryPort !== 10011 ? this.options.queryPort : 10080;
       this.httpQuery = new TS6HttpQuery({
         host: this.options.host,
         port: queryPort,
@@ -163,9 +152,7 @@ export class TS3Client extends EventEmitter {
     // Guard against calling connect() while already connected.
     // Save detectedProtocol first because disconnect() resets it.
     if (this.client) {
-      this.logger.warn(
-        "connect() called while already connected, disconnecting first",
-      );
+      this.logger.warn("connect() called while already connected, disconnecting first");
       const savedProtocol = this.detectedProtocol;
       const savedHttpQuery = this.httpQuery;
       this.disconnect();
@@ -192,9 +179,7 @@ export class TS3Client extends EventEmitter {
           if (this.udpErrorTimer) clearTimeout(this.udpErrorTimer);
           this.udpErrorTimer = setTimeout(() => {
             if (udpErrorCount > 1) {
-              this.logger.warn(
-                `udp send error (repeated ${udpErrorCount} times, connection may be lost)`,
-              );
+              this.logger.warn(`udp send error (repeated ${udpErrorCount} times, connection may be lost)`);
             }
             udpErrorCount = 0;
             this.udpErrorTimer = null;
@@ -205,22 +190,17 @@ export class TS3Client extends EventEmitter {
       this.logger.warn(msg);
     };
 
-    this.client = new TS3FullClient(
-      this.identity,
-      addr,
-      this.options.nickname,
-      {
-        // Forward server password to the protocol library so it can be
-        // included in clientinit for password-protected servers
-        serverPassword: this.options.serverPassword,
-        logger: {
-          debug: (msg) => this.logger.debug(msg),
-          info: (msg) => this.logger.info(msg),
-          warn: throttledWarn,
-          error: (msg) => this.logger.error(msg),
-        },
+    this.client = new TS3FullClient(this.identity, addr, this.options.nickname, {
+      // Forward server password to the protocol library so it can be
+      // included in clientinit for password-protected servers
+      serverPassword: this.options.serverPassword,
+      logger: {
+        debug: (msg) => this.logger.debug(msg),
+        info: (msg) => this.logger.info(msg),
+        warn: throttledWarn,
+        error: (msg) => this.logger.error(msg),
       },
-    );
+    });
 
     this.client.on("textMessage", (msg: TextMessage) => {
       const tsMsg: TS3TextMessage = {
@@ -242,7 +222,7 @@ export class TS3Client extends EventEmitter {
     this.client.on("clientEnter", (info: ClientInfo) => {
       this.logger.debug(
         { nickname: info.nickname, id: info.id },
-        "Client entered",
+        "Client entered"
       );
       this.emit("clientEnter", info);
     });
@@ -255,7 +235,7 @@ export class TS3Client extends EventEmitter {
     this.client.on("clientMoved", (ev: ClientMovedEvent) => {
       this.logger.debug(
         { id: ev.id, targetChannelID: ev.targetChannelID.toString() },
-        "Client moved",
+        "Client moved"
       );
       this.emit("clientMoved", ev);
     });
@@ -277,14 +257,11 @@ export class TS3Client extends EventEmitter {
 
     // Join channel by numeric ID (takes precedence) or by name
     if (this.options.channelId) {
-      await this.joinChannel(
-        this.options.channelId,
-        this.options.channelPassword,
-      );
+      await this.joinChannel(this.options.channelId, this.options.channelPassword);
     } else if (this.options.defaultChannel) {
       await this.joinChannel(
         this.options.defaultChannel,
-        this.options.channelPassword,
+        this.options.channelPassword
       );
     }
 
@@ -297,12 +274,7 @@ export class TS3Client extends EventEmitter {
     const isNumeric = /^\d+$/.test(channelName);
     if (isNumeric) {
       try {
-        await clientMove(
-          this.client,
-          this.clientId,
-          BigInt(channelName),
-          password,
-        );
+        await clientMove(this.client, this.clientId, BigInt(channelName), password);
       } catch (err) {
         this.logger.error({ err, channelName }, "Failed to join channel");
       }
@@ -312,14 +284,16 @@ export class TS3Client extends EventEmitter {
     try {
       const channels = await listChannels(this.client);
       const channel = channels.find((ch) => ch.name === channelName);
+
       if (!channel) {
         this.logger.warn({ channelName }, "Channel not found");
         return;
       }
+
       await clientMove(this.client, this.clientId, channel.id, password);
       this.logger.info(
         { channelName, cid: channel.id.toString() },
-        "Joined channel",
+        "Joined channel"
       );
     } catch (err) {
       this.logger.error({ err, channelName }, "Failed to join channel");
@@ -328,7 +302,7 @@ export class TS3Client extends EventEmitter {
 
   async sendTextMessage(
     message: string,
-    targetMode: number = 2,
+    targetMode: number = 2
   ): Promise<void> {
     if (!this.client) return;
     // targetMode 2 = channel, target 0 = current channel
@@ -360,9 +334,7 @@ export class TS3Client extends EventEmitter {
     await this.client.sendCommandNoWait(cmd);
   }
 
-  async execCommandWithResponse(
-    cmd: string,
-  ): Promise<Record<string, string>[]> {
+  async execCommandWithResponse(cmd: string): Promise<Record<string, string>[]> {
     if (!this.client) throw new Error("Not connected");
     return this.client.execCommandWithResponse(cmd);
   }
@@ -375,28 +347,15 @@ export class TS3Client extends EventEmitter {
     overwrite = true,
   ): Promise<FileUploadInfo> {
     if (!this.client) throw new Error("Not connected");
-    return this.client.fileTransferInitUpload(
-      channelID,
-      path,
-      password,
-      size,
-      overwrite,
-    );
+    return this.client.fileTransferInitUpload(channelID, path, password, size, overwrite);
   }
 
-  async uploadFileData(
-    host: string,
-    info: FileUploadInfo,
-    data: Readable,
-  ): Promise<void> {
+  async uploadFileData(host: string, info: FileUploadInfo, data: Readable): Promise<void> {
     if (!this.client) throw new Error("Not connected");
     await this.client.uploadFileData(host, info, data);
   }
 
-  async fileTransferDeleteFile(
-    channelID: bigint,
-    paths: string[],
-  ): Promise<void> {
+  async fileTransferDeleteFile(channelID: bigint, paths: string[]): Promise<void> {
     if (!this.client) throw new Error("Not connected");
     await fileTransferDeleteFile(this.client, channelID, paths);
   }
@@ -420,10 +379,7 @@ export class TS3Client extends EventEmitter {
       this.client.sendVoice(opusFrame, 5);
       this.voiceFramesSent++;
       if (this.voiceFramesSent === 1) {
-        this.logger.info(
-          { opusBytes: opusFrame.length, clientId: this.clientId },
-          "First voice packet sent to TeamSpeak",
-        );
+        this.logger.info({ opusBytes: opusFrame.length, clientId: this.clientId }, "First voice packet sent to TeamSpeak");
       }
     } catch (err) {
       if (this.voiceFramesSent === 0) {
@@ -444,15 +400,12 @@ export class TS3Client extends EventEmitter {
     if (this.client && !this.disconnecting) {
       this.disconnecting = true;
       const client = this.client;
-      client
-        .disconnect()
-        .catch(() => {})
-        .finally(() => {
-          if (this.client === client) {
-            this.client = null;
-          }
-          this.disconnecting = false;
-        });
+      client.disconnect().catch(() => {}).finally(() => {
+        if (this.client === client) {
+          this.client = null;
+        }
+        this.disconnecting = false;
+      });
     }
     this.clientId = 0;
     this.httpQuery = null;
