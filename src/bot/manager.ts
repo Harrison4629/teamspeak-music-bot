@@ -225,22 +225,22 @@ export class BotManager extends EventEmitter {
       const bot = new BotInstance({
         id: saved.id,
         name: saved.name,
-          tsOptions: {
-            host: saved.serverAddress,
-            port: saved.serverPort,
-            queryPort: proto === "ts6" ? 10080 : 10011,
-            nickname: saved.nickname,
-            // Reuse the stored identity so server groups assigned to this bot
-            // survive restarts — without this the TS server sees a new UID
-            // each connect and strips all previously granted groups.
-            identity: saved.identity || undefined,
-            defaultChannel: saved.defaultChannel || undefined,
-            channelId: saved.channelId || undefined,
-            channelPassword: saved.channelPassword || undefined,
-            serverPassword: saved.serverPassword || undefined,
-            serverProtocol: proto === "ts3" || proto === "ts6" ? proto : undefined,
-            ts6ApiKey: saved.ts6ApiKey || undefined,
-          },
+        tsOptions: {
+          host: saved.serverAddress,
+          port: saved.serverPort,
+          queryPort: proto === "ts6" ? 10080 : 10011,
+          nickname: saved.nickname,
+          // Reuse the stored identity so server groups assigned to this bot
+          // survive restarts — without this the TS server sees a new UID
+          // each connect and strips all previously granted groups.
+          identity: saved.identity || undefined,
+          defaultChannel: saved.defaultChannel || undefined,
+          channelId: saved.channelId || undefined,
+          channelPassword: saved.channelPassword || undefined,
+          serverPassword: saved.serverPassword || undefined,
+          serverProtocol: proto === "ts3" || proto === "ts6" ? proto : undefined,
+          ts6ApiKey: saved.ts6ApiKey || undefined,
+        },
         neteaseProvider: this.neteaseProvider,
         qqProvider: this.qqProvider,
         bilibiliProvider: this.bilibiliProvider,

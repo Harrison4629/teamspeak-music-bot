@@ -275,6 +275,7 @@ export class TS3Client extends EventEmitter {
     if (isNumeric) {
       try {
         await clientMove(this.client, this.clientId, BigInt(channelName), password);
+        this.logger.info({ channelName }, "Joined channel");
       } catch (err) {
         this.logger.error({ err, channelName }, "Failed to join channel");
       }

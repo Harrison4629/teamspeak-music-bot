@@ -51,7 +51,7 @@
       </div>
       <div class="form-group">
         <label>默认频道ID（可选）</label>
-        <input v-model="channelId" :disabled="!!defaultChannel" placeholder="如 1234" class="input" :class="{ disabled: !!defaultChannel }" />
+        <input v-model="channelId" :disabled="!!defaultChannel" placeholder="如 12" class="input" :class="{ disabled: !!defaultChannel }" />
       </div>
       <div class="btn-row">
         <button class="btn-secondary" @click="currentStep = 0">上一步</button>
