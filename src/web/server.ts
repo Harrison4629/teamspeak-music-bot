@@ -95,7 +95,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
   app.use("/api/session/login", loginLimit);
   app.use("/api/session/setup", setupLimit);
 
-  app.use("/api/session", createSessionRouter(users, sessions, audit, logger, permissions));
+  app.use("/api/session", createSessionRouter(users, sessions, audit, logger, permissions, () => options.config.guestMode));
 
   // ─── Gates for everything else under /api ───────────────────────────────
   const requireAuth = createRequireAuth(sessions, permissions, () => options.config.guestMode);

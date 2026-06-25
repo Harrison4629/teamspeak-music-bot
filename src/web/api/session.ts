@@ -5,7 +5,9 @@ import type { UserStore } from "../../data/users.js";
 import type { SessionStore } from "../../data/sessions.js";
 import type { AuditStore } from "../../data/audit.js";
 import { resolvePermissionContext, type PermissionStore } from "../../data/permissions.js";
-import { SESSION_TTL_MS } from "../../data/sessions.js";
+import { SESSION_TTL_MS, GUEST_SESSION_TTL_MS } from "../../data/sessions.js";
+import { GUEST_USER_ID, GUEST_USERNAME } from "../../data/users.js";
+import type { GuestModeConfig } from "../../data/config.js";
 import { SESSION_COOKIE_NAME, validateSessionFromHeaders, extractSessionToken } from "../auth/validateSession.js";
 
 const FAILED_LOGIN_DELAY_MS = 250;
@@ -51,7 +53,8 @@ export function createSessionRouter(
   sessions: SessionStore,
   audit: AuditStore,
   logger: Logger,
-  permissions: PermissionStore
+  permissions: PermissionStore,
+  getGuestConfig: () => GuestModeConfig
 ): Router {
   const router = Router();
 
@@ -69,7 +72,7 @@ export function createSessionRouter(
   };
 
   router.get("/needs-setup", (_req, res) => {
-    res.json({ needsSetup: users.countUsers() === 0 });
+    res.json({ needsSetup: users.countUsers() === 0, guestAllowed: getGuestConfig().enabled });
   });
 
   router.post("/setup", async (req, res) => {
@@ -125,6 +128,17 @@ export function createSessionRouter(
     res.json({ id: user.id, username: user.username, role: user.role });
   });
 
+  router.post("/guest", (_req, res) => {
+    const cfg = getGuestConfig();
+    if (!cfg.enabled) {
+      res.status(403).json({ error: "guest mode disabled" });
+      return;
+    }
+    const { token } = sessions.createSession(GUEST_USER_ID, { ttlMs: GUEST_SESSION_TTL_MS, skipCap: true });
+    setSessionCookie(res, token);
+    res.json({ id: GUEST_USER_ID, username: GUEST_USERNAME, role: "guest" });
+  });
+
   router.post("/logout", (req, res) => {
     const token = parseTokenFromCookie(req.headers.cookie);
     if (token) {
@@ -136,13 +150,20 @@ export function createSessionRouter(
 
   router.get("/me", requireAuthInline, (req, res) => {
     const user = req.user!;
-    const ctx = resolvePermissionContext(user.role, user.id, permissions);
+    const cfg = getGuestConfig();
+    const ctx = resolvePermissionContext(
+      user.role,
+      user.id,
+      permissions,
+      user.role === "guest" ? { bots: cfg.bots, permissions: cfg.permissions } : undefined
+    );
     res.json({
       id: user.id,
       username: user.username,
       role: user.role,
       capabilities: [...ctx.capabilities],
       bots: ctx.bots === "all" ? "all" : [...ctx.bots],
+      guest: ctx.guest ?? null,
     });
   });
 
