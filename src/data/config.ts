@@ -1,5 +1,12 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
+import type { BotAccess, GuestPermissions } from "./permissions.js";
+
+export interface GuestModeConfig {
+  enabled: boolean;
+  bots: BotAccess; // "all" | string[]
+  permissions: GuestPermissions;
+}
 
 export interface BotConfig {
   webPort: number;
@@ -22,6 +29,7 @@ export interface BotConfig {
   // (nginx/Caddy/Cloudflare). Required for correct protocol/host detection
   // behind HTTPS-terminating proxies.
   trustProxy: boolean;
+  guestMode: GuestModeConfig;
 }
 
 export function getDefaultConfig(): BotConfig {
@@ -43,6 +51,19 @@ export function getDefaultConfig(): BotConfig {
     idleTimeoutMinutes: 0,
     publicUrl: "",
     trustProxy: false,
+    guestMode: {
+      enabled: false,
+      bots: "all",
+      permissions: {
+        addToQueue: true,
+        playNext: false,
+        playNow: false,
+        skip: false,
+        transport: false,
+        removeClear: false,
+        playMode: false,
+      },
+    },
   };
 }
 
@@ -51,7 +72,18 @@ export function loadConfig(path: string): BotConfig {
   try {
     const raw = readFileSync(path, "utf-8");
     const partial = JSON.parse(raw) as Partial<BotConfig>;
-    return { ...defaults, ...partial };
+    return {
+      ...defaults,
+      ...partial,
+      guestMode: {
+        ...defaults.guestMode,
+        ...(partial.guestMode ?? {}),
+        permissions: {
+          ...defaults.guestMode.permissions,
+          ...(partial.guestMode?.permissions ?? {}),
+        },
+      },
+    };
   } catch {
     return defaults;
   }

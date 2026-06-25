@@ -106,3 +106,28 @@ describe("config", () => {
     expect(migrated).toBe(false);
   });
 });
+
+describe("guestMode config", () => {
+  it("defaults to disabled, all-bots, append-only", () => {
+    const c = getDefaultConfig();
+    expect(c.guestMode.enabled).toBe(false);
+    expect(c.guestMode.bots).toBe("all");
+    expect(c.guestMode.permissions).toEqual({
+      addToQueue: true, playNext: false, playNow: false,
+      skip: false, transport: false, removeClear: false, playMode: false,
+    });
+  });
+
+  it("deep-merges a partial guestMode so missing sub-keys are back-filled", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tsmb-cfg-"));
+    const p = join(dir, "config.json");
+    writeFileSync(p, JSON.stringify({ guestMode: { enabled: true, permissions: { playNext: true } } }));
+    const c = loadConfig(p);
+    expect(c.guestMode.enabled).toBe(true);
+    expect(c.guestMode.bots).toBe("all"); // back-filled
+    expect(c.guestMode.permissions.playNext).toBe(true);
+    expect(c.guestMode.permissions.addToQueue).toBe(true); // back-filled default
+    expect(c.guestMode.permissions.skip).toBe(false); // back-filled default
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
