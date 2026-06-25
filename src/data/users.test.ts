@@ -202,7 +202,7 @@ describe("guest row exclusion", () => {
     await users.createUser("alice", "password123", "member");
     // Insert the reserved guest row directly (mirrors the migration).
     botDb.db.prepare(
-      "INSERT INTO users (id, username, passwordHash, createdAt, updatedAt, role) VALUES (?, ?, ?, ?, ?, 'guest')"
+      "INSERT OR IGNORE INTO users (id, username, passwordHash, createdAt, updatedAt, role) VALUES (?, ?, ?, ?, ?, 'guest')"
     ).run(GUEST_USER_ID, GUEST_USERNAME, "!", Date.now(), Date.now());
 
     expect(users.countUsers()).toBe(1); // alice only

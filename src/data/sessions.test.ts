@@ -136,7 +136,7 @@ describe("guest sessions", () => {
     sessions = createSessionStore(botDb.db);
     // Create the synthetic guest user row to satisfy the sessions FK.
     botDb.db
-      .prepare("INSERT INTO users (id, username, passwordHash, createdAt, updatedAt, role) VALUES ('__guest__','游客','!',?,?, 'guest')")
+      .prepare("INSERT OR IGNORE INTO users (id, username, passwordHash, createdAt, updatedAt, role) VALUES ('__guest__','游客','!',?,?, 'guest')")
       .run(Date.now(), Date.now());
   });
 
