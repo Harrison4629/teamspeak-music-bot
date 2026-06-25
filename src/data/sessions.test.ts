@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { createDatabase, type BotDatabase } from "./database.js";
 import { createUserStore, type UserStore } from "./users.js";
-import { createSessionStore, type SessionStore, SESSION_TTL_MS, SESSION_TOUCH_INTERVAL_MS, MAX_SESSIONS_PER_USER } from "./sessions.js";
+import { createSessionStore, type SessionStore, SESSION_TTL_MS, SESSION_TOUCH_INTERVAL_MS, MAX_SESSIONS_PER_USER, GUEST_SESSION_TTL_MS } from "./sessions.js";
 
 function sha256(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -124,5 +124,40 @@ describe("SessionStore", () => {
     await Promise.all(Array.from({ length: N }, () => Promise.resolve(sessions.createSession(userId))));
     const count = (botDb.db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number }).n;
     expect(count).toBe(MAX_SESSIONS_PER_USER);
+  });
+});
+
+describe("guest sessions", () => {
+  let botDb: BotDatabase;
+  let sessions: SessionStore;
+
+  beforeEach(() => {
+    botDb = createDatabase(":memory:");
+    sessions = createSessionStore(botDb.db);
+    // Create the synthetic guest user row to satisfy the sessions FK.
+    botDb.db
+      .prepare("INSERT INTO users (id, username, passwordHash, createdAt, updatedAt, role) VALUES ('__guest__','游客','!',?,?, 'guest')")
+      .run(Date.now(), Date.now());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    botDb.close();
+  });
+
+  it("skipCap lets more than MAX_SESSIONS_PER_USER coexist for one principal", () => {
+    const tokens: string[] = [];
+    for (let i = 0; i < MAX_SESSIONS_PER_USER + 3; i++) {
+      tokens.push(sessions.createSession("__guest__", { ttlMs: GUEST_SESSION_TTL_MS, skipCap: true }).token);
+    }
+    // The first token must STILL validate (not evicted).
+    expect(sessions.validateAndTouch(tokens[0])?.role).toBe("guest");
+    const n = (botDb.db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE userId='__guest__'").get() as { n: number }).n;
+    expect(n).toBe(MAX_SESSIONS_PER_USER + 3);
+  });
+
+  it("ttlMs sets a shorter expiry than the default", () => {
+    const { expiresAt } = sessions.createSession("__guest__", { ttlMs: GUEST_SESSION_TTL_MS, skipCap: true });
+    expect(expiresAt).toBeLessThanOrEqual(Date.now() + GUEST_SESSION_TTL_MS + 50);
   });
 });
