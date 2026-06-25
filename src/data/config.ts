@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import type { BotAccess, GuestPermissions } from "./permissions.js";
+import { GUEST_PERMISSION_FLAGS } from "./permissions.js";
 
 export interface GuestModeConfig {
   enabled: boolean;
@@ -72,17 +73,41 @@ export function loadConfig(path: string): BotConfig {
   try {
     const raw = readFileSync(path, "utf-8");
     const partial = JSON.parse(raw) as Partial<BotConfig>;
+
+    // Normalize/sanitize guestMode on load. The WRITE path (POST /api/bot/settings)
+    // sanitizes too, but a hand-edited/legacy/corrupt config.json reaches the gate
+    // directly — so coerce it here as well, mirroring that write-path logic.
+    const partialGm = (partial.guestMode ?? {}) as Partial<GuestModeConfig>;
+    const gm: GuestModeConfig = {
+      ...defaults.guestMode,
+      ...partialGm,
+      // bots → "all" | string[]; anything else falls back to the default ("all").
+      bots:
+        partialGm.bots === "all"
+          ? "all"
+          : Array.isArray(partialGm.bots)
+            ? partialGm.bots.filter((id): id is string => typeof id === "string")
+            : defaults.guestMode.bots,
+      // permissions → defaults, then spread ONLY a plain object, then strict-coerce
+      // each known flag to a boolean (drops index keys + non-boolean values).
+      permissions: { ...defaults.guestMode.permissions },
+    };
+    const partialPerms = partialGm.permissions;
+    if (
+      partialPerms !== null &&
+      typeof partialPerms === "object" &&
+      !Array.isArray(partialPerms)
+    ) {
+      Object.assign(gm.permissions, partialPerms);
+    }
+    for (const f of GUEST_PERMISSION_FLAGS) {
+      gm.permissions[f] = gm.permissions[f] === true;
+    }
+
     return {
       ...defaults,
       ...partial,
-      guestMode: {
-        ...defaults.guestMode,
-        ...(partial.guestMode ?? {}),
-        permissions: {
-          ...defaults.guestMode.permissions,
-          ...(partial.guestMode?.permissions ?? {}),
-        },
-      },
+      guestMode: gm,
     };
   } catch {
     return defaults;

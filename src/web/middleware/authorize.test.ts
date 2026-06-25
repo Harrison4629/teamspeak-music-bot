@@ -30,4 +30,8 @@ describe("authorize", () => {
   it("guest is denied on routes with no guestFlag (e.g. play-song)", () => {
     expect(run({ role: "guest", guest: { addToQueue: true } }, { capability: "player.control" }).res.statusCode).toBe(403);
   });
+  it("guest with a non-boolean truthy flag value (1) is denied (strict-boolean gate)", () => {
+    expect(run({ role: "guest", guest: { playNext: 1 } as any }, { guestFlag: "playNext" }).res.statusCode).toBe(403);
+    expect(run({ role: "guest", guest: { playNext: true } }, { guestFlag: "playNext" }).next).toHaveBeenCalled();
+  });
 });

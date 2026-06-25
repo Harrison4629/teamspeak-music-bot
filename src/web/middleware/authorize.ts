@@ -19,7 +19,7 @@ export function authorize<P = Record<string, string>>(opts: {
     if (!user) { res.status(401).json({ error: "unauthenticated" }); return; }
     if (user.role === "admin") { next(); return; }
     if (user.role === "guest") {
-      if (opts.guestFlag && user.guest?.[opts.guestFlag]) { next(); return; }
+      if (opts.guestFlag && user.guest?.[opts.guestFlag] === true) { next(); return; }
       res.status(403).json({ error: "forbidden" });
       return;
     }
