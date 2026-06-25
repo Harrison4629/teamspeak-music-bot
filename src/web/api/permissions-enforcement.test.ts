@@ -188,6 +188,13 @@ describe("permission enforcement on action routes", () => {
       const res = await request(app).post("/api/music/quality").send({ quality: "high" });
       expect(res.status).not.toBe(403);
     });
+
+    it("GET /api/music/quality is 403 for guests, allowed for members", async () => {
+      const guestApp = makeApp(guest());
+      expect((await request(guestApp).get("/api/music/quality")).status).toBe(403);
+      const memberApp = makeApp(member([], "all"));
+      expect((await request(memberApp).get("/api/music/quality")).status).toBe(200);
+    });
   });
 
   describe("read-only routes stay open", () => {
