@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { BotManager } from "../../bot/manager.js";
-import type { BotConfig } from "../../data/config.js";
+import type { BotConfig, GuestModeConfig } from "../../data/config.js";
 import { saveConfig } from "../../data/config.js";
 import type { Logger } from "../../logger.js";
 import type { BotDatabase } from "../../data/database.js";
@@ -16,6 +16,7 @@ export function createBotRouter(
   logger: Logger,
   botDb: BotDatabase,
   avatarStore: AvatarStore,
+  onGuestPolicyChanged?: (cfg: GuestModeConfig) => void,
 ): Router {
   const router = Router();
 
@@ -55,7 +56,8 @@ export function createBotRouter(
     if (hasIdle) config.idleTimeoutMinutes = idleTimeoutMinutes;
     if (hasAutoPause) config.autoPauseOnEmpty = autoPauseOnEmpty;
 
-    if (guestMode !== undefined && guestMode !== null && typeof guestMode === "object") {
+    const hasGuestMode = guestMode !== undefined && guestMode !== null && typeof guestMode === "object";
+    if (hasGuestMode) {
       const gm = config.guestMode;
       if (typeof guestMode.enabled === "boolean") gm.enabled = guestMode.enabled;
       if (guestMode.bots === "all") {
@@ -73,6 +75,13 @@ export function createBotRouter(
     }
 
     saveConfig(configPath, config);
+
+    // Guest-mode changed: tear down / re-scope in-flight guest WS sockets so a
+    // disabled or narrowed scope takes effect immediately (matches requireAuth's
+    // "disabling immediately invalidates in-flight guest sessions" invariant).
+    if (hasGuestMode) {
+      onGuestPolicyChanged?.(config.guestMode);
+    }
 
     // 通知所有 bot 实例更新
     for (const bot of botManager.getAllBots()) {

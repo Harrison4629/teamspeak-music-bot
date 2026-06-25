@@ -3,11 +3,21 @@ import type { BotManager } from "../bot/manager.js";
 import type { BotInstance } from "../bot/instance.js";
 import type { Logger } from "../logger.js";
 
+export interface WebSocketController {
+  cleanup: () => void;
+  /**
+   * Re-apply the current guest-mode policy to every already-open guest socket.
+   * If guest mode is disabled, in-flight guest sockets are force-closed; otherwise
+   * each guest socket is live re-scoped so out-of-scope bots stop streaming.
+   */
+  refreshGuestPolicy: (cfg: { enabled: boolean; bots: "all" | string[] }) => void;
+}
+
 export function setupWebSocket(
   wss: WebSocketServer,
   botManager: BotManager,
   logger: Logger
-): () => void {
+): WebSocketController {
   const clients = new Set<WebSocket>();
 
   /**
@@ -150,7 +160,7 @@ export function setupWebSocket(
   }, 5000);
   ensureAllBotsAttached();
 
-  return () => {
+  const cleanup = () => {
     clearInterval(intervalId);
     botManager.removeListener("botInstance", onBotInstance);
     botManager.removeListener("botInstanceRemoved", onBotInstanceRemoved);
@@ -159,4 +169,25 @@ export function setupWebSocket(
       detachBotListener(id);
     }
   };
+
+  // When the admin changes guestMode (disable / narrow scope), already-open guest
+  // sockets must stop streaming immediately — their isGuest/botScope were stamped
+  // once at upgrade and would otherwise keep receiving bot state.
+  const refreshGuestPolicy = (cfg: { enabled: boolean; bots: "all" | string[] }) => {
+    for (const ws of clients) {
+      const w = ws as unknown as { isGuest?: boolean; botScope?: "all" | Set<string> };
+      if (!w.isGuest) continue;
+      if (!cfg.enabled) {
+        try {
+          ws.close(1008, "guest mode disabled");
+        } catch {
+          // socket may already be closing; ignore
+        }
+      } else {
+        w.botScope = cfg.bots === "all" ? "all" : new Set(cfg.bots);
+      }
+    }
+  };
+
+  return { cleanup, refreshGuestPolicy };
 }

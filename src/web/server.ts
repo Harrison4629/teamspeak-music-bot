@@ -6,7 +6,7 @@ import { WebSocketServer } from "ws";
 import type { BotManager } from "../bot/manager.js";
 import type { MusicProvider } from "../music/provider.js";
 import type { BotDatabase } from "../data/database.js";
-import type { BotConfig } from "../data/config.js";
+import type { BotConfig, GuestModeConfig } from "../data/config.js";
 import type { Logger } from "../logger.js";
 import type { CookieStore } from "../music/auth.js";
 import type { AvatarStore } from "../data/avatars.js";
@@ -104,6 +104,11 @@ export function createWebServer(options: WebServerOptions): WebServer {
   app.use("/api", requireAuth);
 
   // ─── Protected routes ───────────────────────────────────────────────────
+  // The bot router is mounted BEFORE setupWebSocket runs, but its /settings
+  // handler needs to trigger a guest-policy refresh on the (later-created) WS
+  // controller. Bridge the two with a mutable indirection that starts as a
+  // no-op and is wired to the real refreshGuestPolicy once the WS is set up.
+  let onGuestPolicyChanged: (cfg: GuestModeConfig) => void = () => {};
   app.use(
     "/api/bot",
     createBotRouter(
@@ -113,6 +118,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
       logger,
       options.database,
       options.avatarStore,
+      (cfg) => onGuestPolicyChanged(cfg),
     )
   );
   app.use(
@@ -195,7 +201,8 @@ export function createWebServer(options: WebServerOptions): WebServer {
       wss.emit("connection", ws, req);
     });
   });
-  const cleanupWs = setupWebSocket(wss, options.botManager, logger);
+  const controller = setupWebSocket(wss, options.botManager, logger);
+  onGuestPolicyChanged = controller.refreshGuestPolicy;
 
   // ─── Session cleanup interval ──────────────────────────────────────────
   let cleanupTimer: ReturnType<typeof setInterval> | null = null;
@@ -221,7 +228,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
         clearInterval(cleanupTimer);
         cleanupTimer = null;
       }
-      cleanupWs();
+      controller.cleanup();
       wss.close();
       server.close();
     },
