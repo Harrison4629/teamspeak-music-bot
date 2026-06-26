@@ -104,9 +104,20 @@ export function loadConfig(path: string): BotConfig {
       gm.permissions[f] = gm.permissions[f] === true;
     }
 
+    // Sanitize adminGroups on load too: the WebUI write path filters it, but a
+    // hand-edited / legacy / corrupt config.json reaches the command gate
+    // directly. Keep only non-negative integers; a non-array falls back to the
+    // default []. Mirrors the guestMode sanitization above.
+    const adminGroups = Array.isArray(partial.adminGroups)
+      ? partial.adminGroups.filter(
+          (g): g is number => typeof g === "number" && Number.isInteger(g) && g >= 0,
+        )
+      : defaults.adminGroups;
+
     return {
       ...defaults,
       ...partial,
+      adminGroups,
       guestMode: gm,
     };
   } catch {
