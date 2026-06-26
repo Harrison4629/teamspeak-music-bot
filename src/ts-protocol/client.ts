@@ -61,6 +61,24 @@ export interface TS3TextMessage {
   invokerUid: string;
   message: string;
   targetMode: number; // 1=private, 2=channel, 3=server
+  invokerGroups: string[]; // sender's TS server-group ids; [] when not in view cache
+}
+
+/**
+ * Map the library's TextMessage to our wrapper. Preserves invokerGroups (the
+ * sender's TS server groups), which the library populates only when the sender
+ * is in the bot's client-view cache; otherwise it is []. Used by the chat
+ * command permission gate.
+ */
+export function toTS3TextMessage(msg: TextMessage): TS3TextMessage {
+  return {
+    invokerName: msg.invokerName,
+    invokerId: String(msg.invokerID),
+    invokerUid: msg.invokerUID,
+    message: msg.message,
+    targetMode: msg.targetMode,
+    invokerGroups: msg.invokerGroups ?? [],
+  };
 }
 
 export class TS3Client extends EventEmitter {
@@ -203,14 +221,7 @@ export class TS3Client extends EventEmitter {
     });
 
     this.client.on("textMessage", (msg: TextMessage) => {
-      const tsMsg: TS3TextMessage = {
-        invokerName: msg.invokerName,
-        invokerId: String(msg.invokerID),
-        invokerUid: msg.invokerUID,
-        message: msg.message,
-        targetMode: msg.targetMode,
-      };
-      this.emit("textMessage", tsMsg);
+      this.emit("textMessage", toTS3TextMessage(msg));
     });
 
     this.client.on("disconnected", (err) => {
