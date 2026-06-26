@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { BotInstance } from "./instance.js";
+import { describe, it, expect, vi } from "vitest";
+import { BotInstance, COMMAND_DENIED_MESSAGE } from "./instance.js";
+import type { TS3TextMessage } from "../ts-protocol/client.js";
 
 // Constructing a real BotInstance is heavy (spawns a TS3Client, AudioPlayer,
 // reads avatars, etc.), and runExclusive only touches a single private field
@@ -108,5 +109,86 @@ describe("BotInstance.runExclusive — serialization", () => {
       "Z-start",
       "Z-end",
     ]);
+  });
+});
+
+/** Minimal `this` carrying only what handleTextMessage's gate path touches.
+ *  The gate methods live on the prototype and are attached here so calls like
+ *  `this.isCommandAllowed(...)` resolve against this same object. */
+function makeGateCtx(opts: {
+  adminGroups?: number[];
+  clients?: Array<{ id: number; serverGroups: string[] }>;
+}) {
+  const ctx: any = {
+    config: { commandPrefix: "!", commandAliases: {}, adminGroups: opts.adminGroups ?? [] },
+    logger: { info: vi.fn(), error: vi.fn() },
+    tsClient: {
+      sendTextMessage: vi.fn(async () => {}),
+      getClientsInChannel: vi.fn(async () => opts.clients ?? []),
+    },
+    executeCommand: vi.fn(async () => null),
+    isCommandAllowed: (BotInstance.prototype as any).isCommandAllowed,
+    lookupInvokerGroups: (BotInstance.prototype as any).lookupInvokerGroups,
+  };
+  return ctx;
+}
+
+function makeMsg(message: string, invokerGroups: string[] = [], invokerId = "5"): TS3TextMessage {
+  return { invokerName: "Tester", invokerId, invokerUid: "uid", message, targetMode: 2, invokerGroups };
+}
+
+const handleTextMessage = (BotInstance.prototype as any).handleTextMessage as (
+  this: unknown,
+  msg: TS3TextMessage,
+) => Promise<void>;
+
+describe("BotInstance.handleTextMessage — command permission gate", () => {
+  it("runs a public command even with enforcement on", async () => {
+    const ctx = makeGateCtx({ adminGroups: [6] });
+    await handleTextMessage.call(ctx, makeMsg("!play 晴天"));
+    expect(ctx.executeCommand).toHaveBeenCalledTimes(1);
+    expect(ctx.tsClient.sendTextMessage).not.toHaveBeenCalledWith(COMMAND_DENIED_MESSAGE);
+  });
+
+  it("runs an admin command when enforcement is off (empty adminGroups)", async () => {
+    const ctx = makeGateCtx({ adminGroups: [] });
+    await handleTextMessage.call(ctx, makeMsg("!stop"));
+    expect(ctx.executeCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs an admin command when the event carried a matching group", async () => {
+    const ctx = makeGateCtx({ adminGroups: [6] });
+    await handleTextMessage.call(ctx, makeMsg("!stop", ["6"]));
+    expect(ctx.executeCommand).toHaveBeenCalledTimes(1);
+    expect(ctx.tsClient.getClientsInChannel).not.toHaveBeenCalled(); // no fallback needed
+  });
+
+  it("denies an admin command when known groups do not match (no fallback, with reply)", async () => {
+    const ctx = makeGateCtx({ adminGroups: [6] });
+    await handleTextMessage.call(ctx, makeMsg("!stop", ["8"]));
+    expect(ctx.executeCommand).not.toHaveBeenCalled();
+    expect(ctx.tsClient.getClientsInChannel).not.toHaveBeenCalled();
+    expect(ctx.tsClient.sendTextMessage).toHaveBeenCalledWith(COMMAND_DENIED_MESSAGE);
+  });
+
+  it("falls back to a group lookup when the event carried no groups, and allows on match", async () => {
+    const ctx = makeGateCtx({ adminGroups: [6], clients: [{ id: 5, serverGroups: ["6"] }] });
+    await handleTextMessage.call(ctx, makeMsg("!stop", [], "5"));
+    expect(ctx.tsClient.getClientsInChannel).toHaveBeenCalledTimes(1);
+    expect(ctx.executeCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when the fallback finds the client but no matching group", async () => {
+    const ctx = makeGateCtx({ adminGroups: [6], clients: [{ id: 5, serverGroups: ["8"] }] });
+    await handleTextMessage.call(ctx, makeMsg("!stop", [], "5"));
+    expect(ctx.executeCommand).not.toHaveBeenCalled();
+    expect(ctx.tsClient.sendTextMessage).toHaveBeenCalledWith(COMMAND_DENIED_MESSAGE);
+  });
+
+  it("fails closed when the fallback cannot find the client at all", async () => {
+    const ctx = makeGateCtx({ adminGroups: [6], clients: [] });
+    await handleTextMessage.call(ctx, makeMsg("!stop", [], "5"));
+    expect(ctx.executeCommand).not.toHaveBeenCalled();
+    expect(ctx.tsClient.sendTextMessage).toHaveBeenCalledWith(COMMAND_DENIED_MESSAGE);
   });
 });

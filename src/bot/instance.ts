@@ -9,7 +9,7 @@ import { PlayQueue, PlayMode, type QueuedSong } from "../audio/queue.js";
 import type { MusicProvider, Song } from "../music/provider.js";
 import {
   parseCommand,
-  isAdminCommand,
+  canRunCommand,
   type ParsedCommand,
 } from "./commands.js";
 import { parseSongRef, parseSelectionIndex } from "./song-ref.js";
@@ -23,6 +23,9 @@ import {
   occupancyFromClientList,
   shouldResumeOnReturn,
 } from "./auto-pause.js";
+
+/** Reply sent when a non-admin invokes an admin-only chat command. */
+export const COMMAND_DENIED_MESSAGE = "⛔ 需要管理员权限（该命令仅限管理员服务器组）";
 
 export interface BotInstanceOptions {
   id: string;
@@ -322,8 +325,17 @@ export class BotInstance extends EventEmitter {
     );
     if (!parsed) return;
 
-    if (isAdminCommand(parsed.name)) {
-      // TODO: Check if invoker is in adminGroups
+    if (!(await this.isCommandAllowed(parsed.name, msg))) {
+      this.logger.info(
+        { command: parsed.name, invoker: msg.invokerName },
+        "Command denied: invoker not in adminGroups"
+      );
+      try {
+        await this.tsClient.sendTextMessage(COMMAND_DENIED_MESSAGE);
+      } catch (sendErr) {
+        this.logger.error({ err: sendErr }, "Failed to send permission-denied message to chat");
+      }
+      return;
     }
 
     this.logger.info(
@@ -345,6 +357,42 @@ export class BotInstance extends EventEmitter {
       } catch (sendErr) {
         this.logger.error({ err: sendErr }, "Failed to send error message to chat");
       }
+    }
+  }
+
+  /**
+   * Decide whether a chat command may run for this sender. Reads adminGroups
+   * live from this.config (the router mutates the same object). Only performs
+   * the async group lookup when the synchronous decision is "deny because the
+   * event carried no groups" — i.e. an admin command, enforcement on, and
+   * empty invokerGroups. Fails closed if groups remain undeterminable.
+   */
+  private async isCommandAllowed(commandName: string, msg: TS3TextMessage): Promise<boolean> {
+    const adminGroups = this.config.adminGroups;
+    if (canRunCommand(commandName, msg.invokerGroups, adminGroups)) return true;
+    // Here: admin command, enforcement on, and the provided groups did not match.
+    // If the event actually carried groups, this is a genuine deny — no lookup.
+    if (msg.invokerGroups.length > 0) return false;
+    // Groups unknown (sender not in the view cache): one targeted lookup, then
+    // re-decide. canRunCommand([], …) is false ⇒ fail-closed when still unknown.
+    const groups = await this.lookupInvokerGroups(msg.invokerId);
+    return canRunCommand(commandName, groups, adminGroups);
+  }
+
+  /**
+   * Best-effort lookup of a sender's server groups by client id, via the
+   * channel client list (whose entries already carry parsed serverGroups).
+   * Returns [] when the client can't be found or the query fails (→ deny).
+   */
+  private async lookupInvokerGroups(invokerId: string): Promise<string[]> {
+    const clid = Number(invokerId);
+    if (!Number.isFinite(clid) || clid <= 0) return [];
+    try {
+      const clients = await this.tsClient.getClientsInChannel();
+      const match = clients.find((c) => c.id === clid);
+      return match?.serverGroups ?? [];
+    } catch {
+      return [];
     }
   }
 
