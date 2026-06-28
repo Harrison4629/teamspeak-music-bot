@@ -9,7 +9,7 @@ import { PlayQueue, PlayMode, type QueuedSong } from "../audio/queue.js";
 import type { MusicProvider, Song } from "../music/provider.js";
 import {
   parseCommand,
-  isAdminCommand,
+  canRunCommand,
   type ParsedCommand,
 } from "./commands.js";
 import { parseSongRef, parseSelectionIndex } from "./song-ref.js";
@@ -23,6 +23,9 @@ import {
   occupancyFromClientList,
   shouldResumeOnReturn,
 } from "./auto-pause.js";
+
+/** Reply sent when a non-admin invokes an admin-only chat command. */
+export const COMMAND_DENIED_MESSAGE = "⛔ 需要管理员权限（该命令仅限管理员服务器组）";
 
 export interface BotInstanceOptions {
   id: string;
@@ -322,8 +325,17 @@ export class BotInstance extends EventEmitter {
     );
     if (!parsed) return;
 
-    if (isAdminCommand(parsed.name)) {
-      // TODO: Check if invoker is in adminGroups
+    if (!(await this.isCommandAllowed(parsed.name, msg))) {
+      this.logger.info(
+        { command: parsed.name, invoker: msg.invokerName },
+        "Command denied: invoker not in adminGroups"
+      );
+      try {
+        await this.tsClient.sendTextMessage(COMMAND_DENIED_MESSAGE);
+      } catch (sendErr) {
+        this.logger.error({ err: sendErr }, "Failed to send permission-denied message to chat");
+      }
+      return;
     }
 
     this.logger.info(
@@ -345,6 +357,41 @@ export class BotInstance extends EventEmitter {
       } catch (sendErr) {
         this.logger.error({ err: sendErr }, "Failed to send error message to chat");
       }
+    }
+  }
+
+  /**
+   * Decide whether a chat command may run for this sender. Reads adminGroups
+   * live from this.config. Public commands and the enforcement-off case are
+   * allowed with NO query. For an ENFORCED admin command we resolve the
+   * sender's CURRENT server groups with a targeted server-wide lookup rather
+   * than trusting the text event's cached groups — those are empty for
+   * out-of-channel senders and stale after a live promotion/demotion. Fails
+   * closed when the groups can't be determined.
+   */
+  private async isCommandAllowed(commandName: string, msg: TS3TextMessage): Promise<boolean> {
+    const adminGroups = this.config.adminGroups;
+    // Public command, or enforcement off → allow without any lookup.
+    // (canRunCommand with empty groups is true iff the command is public OR
+    // adminGroups is empty.)
+    if (canRunCommand(commandName, [], adminGroups)) return true;
+    // Enforced admin command: authoritative decision uses freshly-resolved,
+    // server-wide groups. Fail closed if they can't be determined.
+    const groups = await this.lookupInvokerGroups(msg.invokerId);
+    return canRunCommand(commandName, groups, adminGroups);
+  }
+
+  /**
+   * Resolve the sender's current server groups by client id, server-wide.
+   * Returns [] on a bad id or query failure (→ fail-closed deny upstream).
+   */
+  private async lookupInvokerGroups(invokerId: string): Promise<string[]> {
+    const clid = Number(invokerId);
+    if (!Number.isFinite(clid) || clid <= 0) return [];
+    try {
+      return await this.tsClient.getClientServerGroups(clid);
+    } catch {
+      return [];
     }
   }
 

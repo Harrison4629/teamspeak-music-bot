@@ -504,6 +504,23 @@
       </div>
     </section>
 
+    <!-- Command Permissions (admin only) -->
+    <section v-if="session.isAdmin.value" class="settings-section">
+      <h2 class="section-title">命令权限</h2>
+      <p class="profile-section-hint">
+        限制谁能在 TeamSpeak 聊天里运行管理类命令（stop / clear / remove / move / vol / mode）。
+        填写允许的服务器组 ID（逗号分隔）。留空 = 不限制，所有人可用。如何查看服务器组 ID 见 README。
+      </p>
+      <div class="setting-row">
+        <div class="prefix-input-wrap">
+          <input v-model="adminGroupsText" class="input input-sm" placeholder="如 6, 8" />
+          <button class="btn-primary" :disabled="adminGroupsSaving" @click="saveAdminGroups">
+            {{ adminGroupsSaving ? '保存中…' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- Bot Profile (TeamSpeak Behavior) -->
     <section v-if="can('bot.manage')" class="settings-section">
       <h2 class="section-title">机器人 Profile（TeamSpeak 行为）</h2>
@@ -1027,6 +1044,7 @@ async function loadIdleTimeout() {
     idleTimeout.value = res.data.idleTimeoutMinutes ?? 0;
     autoPauseOnEmpty.value = res.data.autoPauseOnEmpty ?? false;
     applyGuestModeFromServer(res.data.guestMode);
+    applyAdminGroupsFromServer(res.data.adminGroups);
   } catch { /* ignore */ }
 }
 
@@ -1089,6 +1107,35 @@ async function saveGuestMode() {
     applyGuestModeFromServer(res.data?.guestMode);
   } catch { /* ignore */ } finally {
     guestSaving.value = false;
+  }
+}
+
+// --- Command permissions (admin only) ---
+const adminGroupsText = ref('');
+const adminGroupsSaving = ref(false);
+
+function applyAdminGroupsFromServer(groups: unknown) {
+  if (Array.isArray(groups)) {
+    adminGroupsText.value = groups.filter((g) => typeof g === 'number').join(', ');
+  }
+}
+
+function parseAdminGroups(text: string): number[] {
+  return text
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((s) => Number(s))
+    .filter((n) => Number.isInteger(n) && n >= 0);
+}
+
+async function saveAdminGroups() {
+  adminGroupsSaving.value = true;
+  try {
+    const res = await axios.post('/api/bot/settings', { adminGroups: parseAdminGroups(adminGroupsText.value) });
+    applyAdminGroupsFromServer(res.data?.adminGroups);
+  } catch { /* ignore */ } finally {
+    adminGroupsSaving.value = false;
   }
 }
 
