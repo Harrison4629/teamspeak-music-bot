@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseLyrics, mapNeteaseAlbums, mapNeteaseSongs } from "./netease.js";
+import { parseLyrics, mapNeteaseAlbums, mapNeteaseSongs, parseNeteaseTrial } from "./netease.js";
 
 describe("NetEase adapter", () => {
   it("parses LRC format lyrics", () => {
@@ -76,5 +76,20 @@ describe("NetEase adapter", () => {
       { id: 9, name: "FM", artists: [{ name: "B" }], album: { name: "Al2", picUrl: "p2" }, duration: 200000, fee: 0 },
     ]);
     expect(out[0]).toMatchObject({ artist: "B", album: "Al2", coverUrl: "p2", vip: false });
+  });
+
+  it("parseNeteaseTrial maps freeTrialInfo to trial seconds", () => {
+    // 无试听（VIP/免费）
+    expect(parseNeteaseTrial({})).toBeUndefined();
+    expect(parseNeteaseTrial({ freeTrialInfo: null })).toBeUndefined();
+    // 标准秒
+    expect(parseNeteaseTrial({ freeTrialInfo: { start: 0, end: 30 } })).toBe(30);
+    expect(parseNeteaseTrial({ freeTrialInfo: { start: 5, end: 35 } })).toBe(30);
+    // 别名容忍 begin/trialBegin
+    expect(parseNeteaseTrial({ freeTrialInfo: { begin: 0, end: 30 } })).toBe(30);
+    // 毫秒兜底（end>1000）
+    expect(parseNeteaseTrial({ freeTrialInfo: { start: 0, end: 30000 } })).toBe(30);
+    // 异常 end<=start
+    expect(parseNeteaseTrial({ freeTrialInfo: { start: 0, end: 0 } })).toBeUndefined();
   });
 });
