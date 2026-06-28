@@ -6,6 +6,9 @@ export interface Song {
   duration: number; // seconds
   coverUrl: string;
   platform: "netease" | "qq" | "bilibili" | "youtube";
+  /** VIP / copyright-restricted: non-VIP users can only play a trial fragment
+   *  (NetEase fee=1 VIP / fee=4 album-only, or QQ pay.payplay/paytrackprice=1). */
+  vip?: boolean;
 }
 
 export interface SongWithUrl extends Song {

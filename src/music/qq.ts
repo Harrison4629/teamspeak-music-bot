@@ -53,6 +53,7 @@ export function mapQqSongs(raw: any[] | null | undefined): Song[] {
         ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${albumMid}.jpg`
         : "",
       platform: "qq" as const,
+      vip: s.pay?.payplay === 1 || s.pay?.paytrackprice === 1 || false,
     };
   }).filter((s) => s.id);
 }
@@ -520,6 +521,7 @@ export class QQMusicProvider implements MusicProvider {
           ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${s.album.mid}.jpg`
           : "",
         platform: "qq",
+        vip: s.pay?.payplay === 1 || s.pay?.paytrackprice === 1 || false,
       }));
     } catch {
       return [];

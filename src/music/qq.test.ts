@@ -22,8 +22,22 @@ describe("QQ adapter", () => {
         duration: 243,
         coverUrl: "https://y.gtimg.cn/music/photo_new/T002R300x300M000alb001.jpg",
         platform: "qq",
+        vip: false,
       },
     ]);
+  });
+
+  it("mapQqSongs maps pay field to vip flag", () => {
+    const out = mapQqSongs([
+      { mid: "v1", name: "VIP playplay", singer: [], album: {}, interval: 100, pay: { payplay: 1, paytrackprice: 0 } },
+      { mid: "v2", name: "VIP trackprice", singer: [], album: {}, interval: 100, pay: { payplay: 0, paytrackprice: 1 } },
+      { mid: "f1", name: "Free", singer: [], album: {}, interval: 100, pay: { payplay: 0, paytrackprice: 0 } },
+      { mid: "f2", name: "No pay field", singer: [], album: {}, interval: 100 },
+    ]);
+    expect(out[0].vip).toBe(true);
+    expect(out[1].vip).toBe(true);
+    expect(out[2].vip).toBe(false);
+    expect(out[3].vip).toBe(false);
   });
 
   it("mapQqAlbums maps albumMID-style raw entries", () => {

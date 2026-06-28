@@ -68,6 +68,21 @@ export function mapNeteaseAlbums(raw: any[] | null | undefined): Album[] {
   }));
 }
 
+export function mapNeteaseSongs(raw: any[] | null | undefined): Song[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((s: any) => ({
+    id: String(s.id),
+    name: s.name,
+    artist: (s.ar ?? s.artists ?? []).map((a: any) => a.name).join(" / "),
+    album: s.al?.name ?? s.album?.name ?? "",
+    duration: Math.round((s.dt ?? s.duration ?? 0) / 1000),
+    coverUrl: s.al?.picUrl ?? s.album?.picUrl ?? "",
+    platform: "netease",
+    // fee: 0=free, 1=VIP, 4=album-only, 8=free low-quality (plays in full, NOT vip)
+    vip: s.fee === 1 || s.fee === 4,
+  }));
+}
+
 // NetEase quality levels: standard(128k) higher(192k) exhigh(320k) lossless(flac) hires(hi-res) jyeffect jymaster
 export const NETEASE_QUALITY_LEVELS = [
   { value: "standard", label: "标准 (128kbps)", bitrate: 128 },
@@ -121,17 +136,7 @@ export class NeteaseProvider implements MusicProvider {
       }),
     ]);
 
-    const songs: Song[] = (songRes.data?.result?.songs ?? []).map(
-      (s: any) => ({
-        id: String(s.id),
-        name: s.name,
-        artist: (s.ar ?? []).map((a: any) => a.name).join(" / "),
-        album: s.al?.name ?? "",
-        duration: Math.round((s.dt ?? 0) / 1000),
-        coverUrl: s.al?.picUrl ?? "",
-        platform: "netease",
-      })
-    );
+    const songs: Song[] = mapNeteaseSongs(songRes.data?.result?.songs);
 
     const playlists: Playlist[] = (
       playlistRes.data?.result?.playlists ?? []
@@ -160,32 +165,14 @@ export class NeteaseProvider implements MusicProvider {
     const res = await this.api.get("/song/detail", {
       params: { ids: songId, ...this.cookieParams },
     });
-    const s = res.data?.songs?.[0];
-    if (!s) return null;
-    return {
-      id: String(s.id),
-      name: s.name,
-      artist: (s.ar ?? []).map((a: any) => a.name).join(" / "),
-      album: s.al?.name ?? "",
-      duration: Math.round((s.dt ?? 0) / 1000),
-      coverUrl: s.al?.picUrl ?? "",
-      platform: "netease",
-    };
+    return mapNeteaseSongs(res.data?.songs)[0] ?? null;
   }
 
   async getPlaylistSongs(playlistId: string): Promise<Song[]> {
     const res = await this.api.get("/playlist/track/all", {
       params: { id: playlistId, ...this.cookieParams },
     });
-    return (res.data?.songs ?? []).map((s: any) => ({
-      id: String(s.id),
-      name: s.name,
-      artist: (s.ar ?? []).map((a: any) => a.name).join(" / "),
-      album: s.al?.name ?? "",
-      duration: Math.round((s.dt ?? 0) / 1000),
-      coverUrl: s.al?.picUrl ?? "",
-      platform: "netease",
-    }));
+    return mapNeteaseSongs(res.data?.songs);
   }
 
   async getRecommendPlaylists(): Promise<Playlist[]> {
@@ -205,15 +192,7 @@ export class NeteaseProvider implements MusicProvider {
     const res = await this.api.get("/album", {
       params: { id: albumId, ...this.cookieParams },
     });
-    return (res.data?.songs ?? []).map((s: any) => ({
-      id: String(s.id),
-      name: s.name,
-      artist: (s.ar ?? []).map((a: any) => a.name).join(" / "),
-      album: s.al?.name ?? "",
-      duration: Math.round((s.dt ?? 0) / 1000),
-      coverUrl: s.al?.picUrl ?? "",
-      platform: "netease",
-    }));
+    return mapNeteaseSongs(res.data?.songs);
   }
 
   async getLyrics(songId: string): Promise<LyricLine[]> {
@@ -312,30 +291,14 @@ export class NeteaseProvider implements MusicProvider {
     const res = await this.api.get("/personal_fm", {
       params: { ...this.cookieParams },
     });
-    return (res.data?.data ?? []).map((s: any) => ({
-      id: String(s.id),
-      name: s.name,
-      artist: (s.artists ?? []).map((a: any) => a.name).join(" / "),
-      album: s.album?.name ?? "",
-      duration: Math.round((s.duration ?? 0) / 1000),
-      coverUrl: s.album?.picUrl ?? "",
-      platform: "netease",
-    }));
+    return mapNeteaseSongs(res.data?.data);
   }
 
   async getDailyRecommendSongs(): Promise<Song[]> {
     const res = await this.api.get("/recommend/songs", {
       params: { ...this.cookieParams },
     });
-    return (res.data?.data?.dailySongs ?? []).map((s: any) => ({
-      id: String(s.id),
-      name: s.name,
-      artist: (s.ar ?? []).map((a: any) => a.name).join(" / "),
-      album: s.al?.name ?? "",
-      duration: Math.round((s.dt ?? 0) / 1000),
-      coverUrl: s.al?.picUrl ?? "",
-      platform: "netease",
-    }));
+    return mapNeteaseSongs(res.data?.data?.dailySongs);
   }
 
   async getPlaylistDetail(playlistId: string): Promise<PlaylistDetail | null> {
