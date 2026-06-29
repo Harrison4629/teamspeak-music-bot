@@ -265,7 +265,7 @@ export function createPlayerRouter(
 
   // Play a playlist by ID — stores metadata only, resolves URL for first song
   // Respects current play mode (random = pick random first song)
-  router.post("/:botId/play-playlist", authorize({ capability: "player.control" }), async (req, res) => {
+  router.post("/:botId/play-playlist", authorize({ capability: "player.control", guestFlag: "playCollection" }), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { playlistId, platform } = req.body;
@@ -352,7 +352,7 @@ export function createPlayerRouter(
   });
 
   // Play an album by ID — mirrors play-playlist but calls getAlbumSongs
-  router.post("/:botId/play-album", authorize({ capability: "player.control" }), async (req, res) => {
+  router.post("/:botId/play-album", authorize({ capability: "player.control", guestFlag: "playCollection" }), async (req, res) => {
     try {
       const bot = (req as any).bot;
       const { albumId, platform } = req.body;

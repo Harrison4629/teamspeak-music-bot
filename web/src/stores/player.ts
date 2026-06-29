@@ -373,22 +373,32 @@ export const usePlayerStore = defineStore('player', {
 
     async playPlaylist(playlistId: string, platform = 'netease') {
       if (!this.activeBotId) return;
-      const res = await axios.post(`/api/player/${this.activeBotId}/play-playlist`, { playlistId, platform });
-      if (res.data?.message) {
-        this.notify(res.data.message, res.data.ok === false ? 'error' : 'info');
+      try {
+        const res = await axios.post(`/api/player/${this.activeBotId}/play-playlist`, { playlistId, platform });
+        if (res.data?.message) {
+          this.notify(res.data.message, res.data.ok === false ? 'error' : 'info');
+        }
+        this._setTiming(this.activeBotId, { serverElapsed: 0 });
+        this._syncAfterAction();
+      } catch (e: any) {
+        // A 403 here means a guest lacks the "play entire collection" permission
+        // (issue #103) — surface it instead of failing silently.
+        this.notify(e?.response?.status === 403 ? '没有权限播放整个歌单' : '播放歌单失败', 'error');
       }
-      this._setTiming(this.activeBotId, { serverElapsed: 0 });
-      this._syncAfterAction();
     },
 
     async playAlbum(albumId: string, platform = 'netease') {
       if (!this.activeBotId) return;
-      const res = await axios.post(`/api/player/${this.activeBotId}/play-album`, { albumId, platform });
-      if (res.data?.message) {
-        this.notify(res.data.message, res.data.ok === false ? 'error' : 'info');
+      try {
+        const res = await axios.post(`/api/player/${this.activeBotId}/play-album`, { albumId, platform });
+        if (res.data?.message) {
+          this.notify(res.data.message, res.data.ok === false ? 'error' : 'info');
+        }
+        this._setTiming(this.activeBotId, { serverElapsed: 0 });
+        this._syncAfterAction();
+      } catch (e: any) {
+        this.notify(e?.response?.status === 403 ? '没有权限播放整个专辑' : '播放专辑失败', 'error');
       }
-      this._setTiming(this.activeBotId, { serverElapsed: 0 });
-      this._syncAfterAction();
     },
 
     async pause() {

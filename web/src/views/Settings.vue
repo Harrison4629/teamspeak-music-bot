@@ -1069,12 +1069,13 @@ const GUEST_FLAGS: { token: string; label: string }[] = [
   { token: 'transport', label: '暂停/继续/进度/音量' },
   { token: 'removeClear', label: '移除/清空队列' },
   { token: 'playMode', label: '切换播放模式 / FM' },
+  { token: 'playCollection', label: '播放整个歌单/专辑' },
 ];
 const guestMode = reactive<{ enabled: boolean; botsAll: boolean; selectedBotIds: string[]; permissions: Record<string, boolean> }>({
   enabled: false,
   botsAll: true,
   selectedBotIds: [],
-  permissions: { addToQueue: true, playNext: false, playNow: false, skip: false, transport: false, removeClear: false, playMode: false },
+  permissions: { addToQueue: true, playNext: false, playNow: false, skip: false, transport: false, removeClear: false, playMode: false, playCollection: false },
 });
 const guestSaving = ref(false);
 

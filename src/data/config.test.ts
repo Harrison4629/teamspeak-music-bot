@@ -115,6 +115,7 @@ describe("guestMode config", () => {
     expect(c.guestMode.permissions).toEqual({
       addToQueue: true, playNext: false, playNow: false,
       skip: false, transport: false, removeClear: false, playMode: false,
+      playCollection: false,
     });
   });
 
@@ -167,10 +168,11 @@ describe("guestMode config", () => {
     });
     it("a string permissions value yields defaults with no numeric index keys", () => {
       const gm = loadGuestMode({ guestMode: { permissions: "hacked" } });
-      // 7 known flags present at their defaults
+      // all known flags present at their defaults
       expect(gm.permissions).toEqual({
         addToQueue: true, playNext: false, playNow: false,
         skip: false, transport: false, removeClear: false, playMode: false,
+        playCollection: false,
       });
       // no garbage index keys leaked from spreading a string
       expect((gm.permissions as unknown as Record<string, unknown>)["0"]).toBeUndefined();

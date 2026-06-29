@@ -63,6 +63,7 @@ export function getDefaultConfig(): BotConfig {
         transport: false,
         removeClear: false,
         playMode: false,
+        playCollection: false,
       },
     },
   };
