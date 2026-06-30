@@ -35,6 +35,7 @@ export interface BotInstanceOptions {
   qqProvider: MusicProvider;
   bilibiliProvider: MusicProvider;
   youtubeProvider: MusicProvider;
+  localProvider?: MusicProvider;
   database: BotDatabase;
   config: BotConfig;
   logger: Logger;
@@ -67,6 +68,7 @@ export class BotInstance extends EventEmitter {
   private qqProvider: MusicProvider;
   private bilibiliProvider: MusicProvider;
   private youtubeProvider: MusicProvider;
+  private localProvider: MusicProvider;
   private database: BotDatabase;
   private config: BotConfig;
   private logger: Logger;
@@ -95,6 +97,7 @@ export class BotInstance extends EventEmitter {
     this.qqProvider = options.qqProvider;
     this.bilibiliProvider = options.bilibiliProvider;
     this.youtubeProvider = options.youtubeProvider;
+    this.localProvider = options.localProvider ?? options.neteaseProvider;
     this.database = options.database;
     this.config = options.config;
     this.logger = options.logger.child({ botId: this.id });
@@ -147,6 +150,43 @@ export class BotInstance extends EventEmitter {
     });
   }
 
+  isLocalAudioEnabled(): boolean {
+    return this.config.localAudioEnabled !== false;
+  }
+
+  cleanupQueuedLocalSongs(reason: string): void {
+    this.cleanupLocalSongs(this.queue.list(), reason);
+  }
+
+  private isSameSong(a: QueuedSong | Song | null | undefined, b: QueuedSong | Song | null | undefined): boolean {
+    return !!a && !!b && a.platform === b.platform && a.id === b.id;
+  }
+
+  private cleanupLocalSong(song: QueuedSong | Song | null | undefined, reason: string): void {
+    if (!song || song.platform !== "local") return;
+    const cleanupProvider = this.localProvider as MusicProvider & {
+      deleteSong?: (songId: string) => Promise<boolean>;
+    };
+    if (typeof cleanupProvider.deleteSong !== "function") return;
+
+    cleanupProvider.deleteSong(song.id).then((deleted) => {
+      if (deleted) {
+        this.logger.info({ songId: song.id, name: song.name, reason }, "Deleted local audio file");
+      }
+    }).catch((err) => {
+      this.logger.warn({ err, songId: song.id, name: song.name, reason }, "Failed to delete local audio file");
+    });
+  }
+
+  private cleanupLocalSongs(songs: Array<QueuedSong | Song>, reason: string): void {
+    const seen = new Set<string>();
+    for (const song of songs) {
+      if (song.platform !== "local" || seen.has(song.id)) continue;
+      seen.add(song.id);
+      this.cleanupLocalSong(song, reason);
+    }
+  }
+
   private setupTsEvents(): void {
     this.tsClient.on("textMessage", (msg: TS3TextMessage) => {
       this.handleTextMessage(msg).catch((err) => {
@@ -159,8 +199,11 @@ export class BotInstance extends EventEmitter {
       // completed (hanging handshake → 60s library idle timeout) and
       // this.connected was never flipped to true. Previously this handler
       // short-circuited on !this.connected, leaving player stuck as "playing".
+      const queued = this.queue.list();
       this.connected = false;
       this.player.stop();
+      this.cleanupLocalSongs(queued, "disconnected");
+      this.queue.clear();
       // A lifecycle change must not leave a stale auto-resume armed.
       this.autoPaused = false;
       // Only emit externally once per lifecycle so clients don't see a
@@ -241,7 +284,10 @@ export class BotInstance extends EventEmitter {
 
   disconnect(): void {
     this._cancelIdleTimer();
+    const queued = this.queue.list();
     this.player.stop();
+    this.cleanupLocalSongs(queued, "disconnected");
+    this.queue.clear();
     this.connected = false;
     if (!this.disconnectEmitted) {
       this.disconnectEmitted = true;
@@ -482,9 +528,10 @@ export class BotInstance extends EventEmitter {
     }
   }
 
-  getProviderFor(platform: "netease" | "qq" | "bilibili" | "youtube"): MusicProvider {
+  getProviderFor(platform: "netease" | "qq" | "bilibili" | "youtube" | "local"): MusicProvider {
     if (platform === "bilibili") return this.bilibiliProvider;
     if (platform === "youtube") return this.youtubeProvider;
+    if (platform === "local") return this.localProvider;
     return platform === "qq" ? this.qqProvider : this.neteaseProvider;
   }
 
@@ -504,6 +551,10 @@ export class BotInstance extends EventEmitter {
   async resolveAndPlay(song: QueuedSong): Promise<boolean> {
     if (!this.connected) {
       this.logger.warn({ songId: song.id, name: song.name }, "resolveAndPlay called on disconnected bot — skipping");
+      return false;
+    }
+    if (song.platform === "local" && !this.isLocalAudioEnabled()) {
+      this.logger.warn({ songId: song.id, name: song.name }, "Local audio playback disabled — refusing track");
       return false;
     }
     // Clear any accumulated skip votes — every fresh track starts with a
@@ -621,6 +672,11 @@ export class BotInstance extends EventEmitter {
     const { song, error } = await this.resolvePlayQuery(cmd);
     if (error) return error;
     const song0 = song!;
+    const previous = this.queue.current();
+    if (previous && !this.isSameSong(previous, song0)) {
+      this.player.stop();
+      this.cleanupLocalSong(previous, "replaced");
+    }
     this.queue.clear();
     this.disableFmMode();
     this.queue.add({ ...song0 });
@@ -705,7 +761,9 @@ export class BotInstance extends EventEmitter {
   }
 
   private cmdStop(): string {
+    const queued = this.queue.list();
     this.player.stop();
+    this.cleanupLocalSongs(queued, "stopped");
     this.autoPaused = false;
     this.queue.clear();
     this.disableFmMode();
@@ -764,7 +822,9 @@ export class BotInstance extends EventEmitter {
   }
 
   private cmdClear(): string {
+    const queued = this.queue.list();
     this.player.stop();
+    this.cleanupLocalSongs(queued, "queue_cleared");
     this.queue.clear();
     this.disableFmMode();
     this.profileManager.onSongChange(null).catch((err) => {
@@ -779,6 +839,7 @@ export class BotInstance extends EventEmitter {
     if (isNaN(index) || index < 0) return "Usage: !remove <number>";
     const removed = this.queue.remove(index);
     if (!removed) return "Invalid position";
+    this.cleanupLocalSong(removed, "removed_from_queue");
     this.emit("stateChange");
     return `Removed: ${removed.name}`;
   }
@@ -838,6 +899,9 @@ export class BotInstance extends EventEmitter {
     const songs = await provider.getPlaylistSongs(playlistId);
     if (songs.length === 0) return "Playlist is empty or not found";
 
+    const previousQueue = this.queue.list();
+    this.player.stop();
+    this.cleanupLocalSongs(previousQueue, "queue_replaced");
     this.queue.clear();
     this.disableFmMode();
     for (const song of songs) {
@@ -873,6 +937,9 @@ export class BotInstance extends EventEmitter {
     const songs = await provider.getAlbumSongs(albumId);
     if (songs.length === 0) return "Album is empty or not found";
 
+    const previousQueue = this.queue.list();
+    this.player.stop();
+    this.cleanupLocalSongs(previousQueue, "queue_replaced");
     this.queue.clear();
     this.disableFmMode();
     for (const song of songs) {
@@ -902,6 +969,9 @@ export class BotInstance extends EventEmitter {
     if (songs.length === 0)
       return "No FM songs available (need to login first)";
 
+    const previousQueue = this.queue.list();
+    this.player.stop();
+    this.cleanupLocalSongs(previousQueue, "queue_replaced");
     this.queue.clear();
     for (const song of songs) {
       this.queue.add({ ...song, platform: provider.platform });
@@ -935,6 +1005,9 @@ export class BotInstance extends EventEmitter {
       filtered = result.songs.slice(0, 20);
     }
 
+    const previousQueue = this.queue.list();
+    this.player.stop();
+    this.cleanupLocalSongs(previousQueue, "queue_replaced");
     this.queue.clear();
     this.disableFmMode();
     for (const song of filtered) {
@@ -1049,11 +1122,12 @@ export class BotInstance extends EventEmitter {
    */
   async playNext(maxRetries = 3): Promise<boolean> {
     if (this.isAdvancing || !this.connected) return false;
+    const previous = this.queue.current();
     this.isAdvancing = true;
+    let started = false;
     try {
       this.voteSkipUsers.clear();
       const next = this.queue.next();
-      let started = false;
       if (next) {
         started = await this.resolveAndPlay(next);
         if (!started) {
@@ -1093,6 +1167,10 @@ export class BotInstance extends EventEmitter {
       this.emit("stateChange");
       return started;
     } finally {
+      const current = started ? this.queue.current() : null;
+      if (previous && !this.isSameSong(previous, current)) {
+        this.cleanupLocalSong(previous, "playback_finished");
+      }
       this.isAdvancing = false;
     }
   }

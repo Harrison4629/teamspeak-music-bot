@@ -74,6 +74,7 @@ export class BotManager extends EventEmitter {
   private qqProvider: MusicProvider;
   private bilibiliProvider: MusicProvider;
   private youtubeProvider: MusicProvider;
+  private localProvider: MusicProvider;
   private database: BotDatabase;
   private config: BotConfig;
   private logger: Logger;
@@ -90,13 +91,15 @@ export class BotManager extends EventEmitter {
     logger: Logger,
     avatarStore: AvatarStore,
     permissions: PermissionStore,
-    configPath: string
+    configPath: string,
+    localProvider?: MusicProvider
   ) {
     super();
     this.neteaseProvider = neteaseProvider;
     this.qqProvider = qqProvider;
     this.bilibiliProvider = bilibiliProvider;
     this.youtubeProvider = new YouTubeProvider();
+    this.localProvider = localProvider ?? neteaseProvider;
     this.database = database;
     this.config = config;
     this.logger = logger;
@@ -127,6 +130,7 @@ export class BotManager extends EventEmitter {
       qqProvider: this.qqProvider,
       bilibiliProvider: this.bilibiliProvider,
       youtubeProvider: this.youtubeProvider,
+      localProvider: this.localProvider,
       database: this.database,
       config: this.config,
       logger: this.logger,
@@ -253,6 +257,7 @@ export class BotManager extends EventEmitter {
         qqProvider: this.qqProvider,
         bilibiliProvider: this.bilibiliProvider,
         youtubeProvider: this.youtubeProvider,
+        localProvider: this.localProvider,
         database: this.database,
         config: this.config,
         logger: this.logger,
@@ -305,6 +310,7 @@ export class BotManager extends EventEmitter {
         qqProvider: this.qqProvider,
         bilibiliProvider: this.bilibiliProvider,
         youtubeProvider: this.youtubeProvider,
+        localProvider: this.localProvider,
         database: this.database,
         config: this.config,
         logger: this.logger,

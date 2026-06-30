@@ -42,6 +42,16 @@ export function createPlayerRouter(
     return "";
   };
 
+  function isLocalAudioDisabled(bot: any, platform: unknown): boolean {
+    return platform === "local" &&
+      typeof bot.isLocalAudioEnabled === "function" &&
+      !bot.isLocalAudioEnabled();
+  }
+
+  function rejectDisabledLocalAudio(res: any): void {
+    res.status(403).json({ error: "本地音频播放已关闭" });
+  }
+
   router.post("/:botId/play", authorize({ capability: "player.control" }), async (req, res) => {
     try {
       const bot = (req as any).bot;
@@ -100,8 +110,12 @@ export function createPlayerRouter(
     try {
       const bot = (req as any).bot;
       const { platform } = req.body;
+      if (isLocalAudioDisabled(bot, platform)) {
+        rejectDisabledLocalAudio(res);
+        return;
+      }
       const provider = bot.getProviderFor(
-        platform === "bilibili" || platform === "qq" || platform === "youtube"
+        platform === "bilibili" || platform === "qq" || platform === "youtube" || platform === "local"
           ? platform
           : "netease"
       );
@@ -269,16 +283,21 @@ export function createPlayerRouter(
     try {
       const bot = (req as any).bot;
       const { playlistId, platform } = req.body;
+      if (isLocalAudioDisabled(bot, platform)) {
+        rejectDisabledLocalAudio(res);
+        return;
+      }
       // Use the bot's own provider lookup — it already knows about youtube,
       // which the router's constructor params did not.
       const provider = bot.getProviderFor(
-        platform === "bilibili" || platform === "qq" || platform === "youtube"
+        platform === "bilibili" || platform === "qq" || platform === "youtube" || platform === "local"
           ? platform
           : "netease"
       );
 
       // Stop current playback
       bot.getPlayer().stop();
+      bot.cleanupQueuedLocalSongs?.("queue_replaced");
       bot.getPlayer().resetFailures();
 
       const songs = await provider.getPlaylistSongs(playlistId);
@@ -311,6 +330,7 @@ export function createPlayerRouter(
       }
 
       const queue = bot.getQueueManager();
+      bot.cleanupQueuedLocalSongs?.("queue_replaced");
       queue.clear();
       for (const song of queueable) {
         queue.add({ ...song, platform: provider.platform });
@@ -356,14 +376,19 @@ export function createPlayerRouter(
     try {
       const bot = (req as any).bot;
       const { albumId, platform } = req.body;
+      if (isLocalAudioDisabled(bot, platform)) {
+        rejectDisabledLocalAudio(res);
+        return;
+      }
       const provider = bot.getProviderFor(
-        platform === "bilibili" || platform === "qq" || platform === "youtube"
+        platform === "bilibili" || platform === "qq" || platform === "youtube" || platform === "local"
           ? platform
           : "netease"
       );
 
       // Stop current playback
       bot.getPlayer().stop();
+      bot.cleanupQueuedLocalSongs?.("queue_replaced");
       bot.getPlayer().resetFailures();
 
       const songs = await provider.getAlbumSongs(albumId);
@@ -389,6 +414,7 @@ export function createPlayerRouter(
       }
 
       const queue = bot.getQueueManager();
+      bot.cleanupQueuedLocalSongs?.("queue_replaced");
       queue.clear();
       for (const song of queueable) {
         queue.add({ ...song, platform: provider.platform });
@@ -432,7 +458,13 @@ export function createPlayerRouter(
         res.status(400).json({ error: "song object with id and platform is required" });
         return;
       }
+      if (isLocalAudioDisabled(bot, song.platform)) {
+        rejectDisabledLocalAudio(res);
+        return;
+      }
       const queue = bot.getQueueManager();
+      bot.getPlayer().stop();
+      bot.cleanupQueuedLocalSongs?.("queue_replaced");
       queue.clear();
       queue.add(song);
       queue.play();
@@ -458,6 +490,10 @@ export function createPlayerRouter(
       const { song } = req.body;
       if (!song || !song.id || !song.platform) {
         res.status(400).json({ error: "song object with id and platform is required" });
+        return;
+      }
+      if (isLocalAudioDisabled(bot, song.platform)) {
+        rejectDisabledLocalAudio(res);
         return;
       }
       // Serialize the queue mutation + playback so concurrent requests can't
@@ -504,6 +540,10 @@ export function createPlayerRouter(
         res.status(400).json({ error: "song object with id and platform is required" });
         return;
       }
+      if (isLocalAudioDisabled(bot, song.platform)) {
+        rejectDisabledLocalAudio(res);
+        return;
+      }
       // Serialize the insert-after-current + promote + playback so concurrent
       // requests can't interleave (audible track must match queue.currentIndex).
       const body = await bot.runExclusive(async () => {
@@ -531,6 +571,10 @@ export function createPlayerRouter(
       const { song } = req.body;
       if (!song || !song.id || !song.platform) {
         res.status(400).json({ error: "song object with id and platform is required" });
+        return;
+      }
+      if (isLocalAudioDisabled(bot, song.platform)) {
+        rejectDisabledLocalAudio(res);
         return;
       }
       // Serialize the queue mutation + (possible) playback so concurrent
@@ -561,8 +605,12 @@ export function createPlayerRouter(
     try {
       const bot = (req as any).bot;
       const { songId, platform } = req.body;
+      if (isLocalAudioDisabled(bot, platform)) {
+        rejectDisabledLocalAudio(res);
+        return;
+      }
       const provider = bot.getProviderFor(
-        platform === "bilibili" || platform === "qq" || platform === "youtube"
+        platform === "bilibili" || platform === "qq" || platform === "youtube" || platform === "local"
           ? platform
           : "netease"
       );
