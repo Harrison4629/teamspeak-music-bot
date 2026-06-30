@@ -453,6 +453,19 @@
           @change="saveAutoPause"
         />
       </label>
+
+      <label class="profile-toggle behavior-toggle">
+        <div class="profile-toggle-text">
+          <div class="profile-toggle-label">本地音频播放</div>
+          <div class="profile-toggle-hint">开启后允许在搜索页拖拽/选择本地音频上传并播放；关闭后会拒绝新的本地上传和本地歌曲播放请求。</div>
+        </div>
+        <input
+          v-model="localAudioEnabled"
+          type="checkbox"
+          class="profile-toggle-switch"
+          @change="saveLocalAudioEnabled"
+        />
+      </label>
     </section>
 
     <!-- Guest Mode (admin only) -->
@@ -1037,12 +1050,14 @@ async function savePrefix() {
 const idleTimeout = ref(0);
 // Defaults OFF to match the backend default (config.ts getDefaultConfig).
 const autoPauseOnEmpty = ref(false);
+const localAudioEnabled = ref(true);
 
 async function loadIdleTimeout() {
   try {
     const res = await axios.get('/api/bot/settings');
     idleTimeout.value = res.data.idleTimeoutMinutes ?? 0;
     autoPauseOnEmpty.value = res.data.autoPauseOnEmpty ?? false;
+    localAudioEnabled.value = res.data.localAudioEnabled ?? true;
     applyGuestModeFromServer(res.data.guestMode);
     applyAdminGroupsFromServer(res.data.adminGroups);
   } catch { /* ignore */ }
@@ -1057,6 +1072,13 @@ async function saveIdleTimeout() {
 async function saveAutoPause() {
   try {
     await axios.post('/api/bot/settings', { autoPauseOnEmpty: autoPauseOnEmpty.value });
+  } catch { /* ignore */ }
+}
+
+async function saveLocalAudioEnabled() {
+  try {
+    const res = await axios.post('/api/bot/settings', { localAudioEnabled: localAudioEnabled.value });
+    localAudioEnabled.value = res.data.localAudioEnabled ?? localAudioEnabled.value;
   } catch { /* ignore */ }
 }
 

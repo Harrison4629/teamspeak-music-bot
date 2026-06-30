@@ -22,6 +22,8 @@ export interface BotConfig {
   autoReturnDelay: number;
   autoPauseOnEmpty: boolean;
   idleTimeoutMinutes: number;
+  /** Enable uploading and playback of server-stored local audio files. */
+  localAudioEnabled: boolean;
   // Public base URL used when generating share links (e.g. the bot专属链接).
   // Leave empty to use the browser's current origin. Example:
   //   "https://music.example.com" or "http://1.2.3.4:3000"
@@ -50,6 +52,7 @@ export function getDefaultConfig(): BotConfig {
     // clients are present). Users can opt in from the web UI.
     autoPauseOnEmpty: false,
     idleTimeoutMinutes: 0,
+    localAudioEnabled: true,
     publicUrl: "",
     trustProxy: false,
     guestMode: {
